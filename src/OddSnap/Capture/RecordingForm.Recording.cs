@@ -33,6 +33,8 @@ public sealed partial class RecordingForm
             _selection.Y + _virtualBounds.Y,
             _selection.Width, _selection.Height);
 
+        EnsureRegionCaptureTarget(screenRegion);
+
         if (_format == Models.RecordingFormat.GIF)
         {
             _recorder = new GifRecorder(screenRegion, _fps, _maxDuration, _showCursor);

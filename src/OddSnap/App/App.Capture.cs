@@ -45,7 +45,7 @@ public partial class App
         public Services.HistoryEntry? HistoryEntry { get; init; }
     }
 
-    private void LaunchGifRecording()
+    private void LaunchGifRecording(RecordingCaptureTarget? preselectedTarget = null)
     {
         var thread = new Thread(() =>
         {
@@ -80,6 +80,8 @@ public partial class App
                 form = new RecordingForm(selectionScreenshot, bounds, fps, savePath, fmt, maxH,
                     showCursor, recMic, s.MicrophoneDeviceId, recDesktop, s.DesktopAudioDeviceId,
                     _settingsService!.Settings.ShowCaptureMagnifier);
+                if (preselectedTarget is not null)
+                    form.UsePreselectedTarget(preselectedTarget);
                 selectionScreenshot = null;
 
                 form.Shown += (_, _) =>
@@ -710,6 +712,9 @@ public partial class App
                 {
                     LaunchGifRecording();
                 }
+                break;
+            case "_recordMonitor":
+                LaunchGifRecording(RecordingCaptureTargetSelector.GetMonitorTargetAt(System.Windows.Forms.Cursor.Position));
                 break;
             default:
                 ResetCapturing();
