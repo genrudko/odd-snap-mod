@@ -31,13 +31,14 @@ public sealed class GifRecorder : IDisposable
     private Thread? _writerThread;
     private int _frameCount;
     private int _writtenFrameCount;
-    private DateTime _startTime;
+    private readonly RecordingPauseClock _pauseClock = new();
     private bool _disposed;
     private int _initialCaptureDelayMs = DefaultInitialCaptureDelayMs;
 
     public int FrameCount => _frameCount;
-    public TimeSpan Elapsed => DateTime.UtcNow - _startTime;
+    public TimeSpan Elapsed => _pauseClock.Elapsed;
     public bool IsRecording => _captureThread?.IsAlive == true;
+    public bool IsPaused => _pauseClock.IsPaused;
 
     public GifRecorder(Rectangle region, int fps = 15, int maxDurationSeconds = 30, bool showCursor = false,
         RecordingCaptureTarget? captureTarget = null)
@@ -83,10 +84,15 @@ public sealed class GifRecorder : IDisposable
                 catch (ThreadInterruptedException) { return; }
             }
 
+            _pauseClock.Start();
             while (!ct.IsCancellationRequested)
             {
-                // Auto-stop at max duration
-                if ((DateTime.UtcNow - _startTime).TotalMilliseconds >= _maxDurationMs)
+                _pauseClock.WaitWhilePaused(ct);
+                if (ct.IsCancellationRequested)
+                    break;
+
+                // Auto-stop at max active duration. Paused time is excluded.
+                if (_pauseClock.Elapsed.TotalMilliseconds >= _maxDurationMs)
                     break;
 
                 var sw = Stopwatch.StartNew();
@@ -155,10 +161,15 @@ public sealed class GifRecorder : IDisposable
         }
     }
 
+    public void Pause() => _pauseClock.Pause();
+
+    public void Resume() => _pauseClock.Resume();
+
     /// <summary>Stops recording and encodes frames to GIF. Uses FFmpeg if available (10-50x faster).</summary>
     public string StopAndEncode(string outputPath)
     {
         _cts.Cancel();
+        _pauseClock.Resume();
         // Ensure the consumer can drain and exit promptly.
         try { _frameQueue.CompleteAdding(); } catch { }
 
@@ -340,6 +351,7 @@ public sealed class GifRecorder : IDisposable
     public void Discard()
     {
         _cts.Cancel();
+        _pauseClock.Resume();
         try { _frameQueue.CompleteAdding(); } catch { }
         _captureThread?.Join(10_000);
         _writerThread?.Join(10_000);
@@ -356,6 +368,7 @@ public sealed class GifRecorder : IDisposable
         if (_disposed) return;
         _disposed = true;
         _cts.Cancel();
+        _pauseClock.Resume();
         try { _frameQueue.CompleteAdding(); } catch { }
         JoinThreadIfNotCurrent(_captureThread, 3_000);
         JoinThreadIfNotCurrent(_writerThread, 3_000);

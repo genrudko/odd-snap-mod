@@ -182,13 +182,57 @@ public sealed partial class RecordingForm
 
     private void CalcToolbarLayout()
     {
-        int tw = UiChrome.ScaleInt(320), th = WindowsDockRenderer.SurfaceHeight;
+        int tw = UiChrome.ScaleInt(360), th = WindowsDockRenderer.SurfaceHeight;
         _toolbarRect = GetSmartRecordingToolbarRect(
             _recordRegion,
-            new Rectangle(0, 0, Width, Height),
+            GetRecordingToolbarPlacementBounds(),
             new Size(tw, th),
             UiChrome.ScaleInt(14),
             UiChrome.ScaleInt(4));
+    }
+
+    private Rectangle GetRecordingToolbarPlacementBounds()
+    {
+        var fullVirtualClientBounds = new Rectangle(0, 0, Width, Height);
+        if (_captureTarget is null)
+            return fullVirtualClientBounds;
+
+        Rectangle placementScreenBounds;
+        switch (_captureTarget.Kind)
+        {
+            case RecordingCaptureTargetKind.Monitor:
+                placementScreenBounds = _captureTarget.Bounds;
+                break;
+
+            case RecordingCaptureTargetKind.Window:
+            {
+                var currentWindowBounds = !_trackedWindowScreenBounds.IsEmpty
+                    ? _trackedWindowScreenBounds
+                    : _captureTarget.Bounds;
+                try
+                {
+                    placementScreenBounds = Screen.FromRectangle(currentWindowBounds).WorkingArea;
+                }
+                catch
+                {
+                    placementScreenBounds = currentWindowBounds;
+                }
+                break;
+            }
+
+            default:
+                return fullVirtualClientBounds;
+        }
+
+        var clipped = Rectangle.Intersect(placementScreenBounds, _virtualBounds);
+        if (clipped.Width <= 0 || clipped.Height <= 0)
+            return fullVirtualClientBounds;
+
+        return new Rectangle(
+            clipped.X - _virtualBounds.X,
+            clipped.Y - _virtualBounds.Y,
+            clipped.Width,
+            clipped.Height);
     }
 
     internal static Rectangle GetSmartRecordingToolbarRect(
