@@ -38,6 +38,7 @@ public sealed class VideoRecorder : IDisposable
     private readonly string? _micDeviceId;
     private readonly bool _recordDesktop;
     private readonly string? _desktopDeviceId;
+    private readonly RecordingCaptureTarget? _captureTarget;
     private readonly CancellationTokenSource _cts = new();
     private readonly object _previewFrameLock = new();
 
@@ -87,7 +88,8 @@ public sealed class VideoRecorder : IDisposable
                          int maxDurationSeconds = 300, int maxHeight = 0,
                          bool showCursor = false,
                          bool recordMic = false, string? micDeviceId = null,
-                         bool recordDesktop = false, string? desktopDeviceId = null)
+                         bool recordDesktop = false, string? desktopDeviceId = null,
+                         RecordingCaptureTarget? captureTarget = null)
     {
         _region = region;
         _format = format;
@@ -99,6 +101,7 @@ public sealed class VideoRecorder : IDisposable
         _micDeviceId = micDeviceId;
         _recordDesktop = recordDesktop;
         _desktopDeviceId = desktopDeviceId;
+        _captureTarget = captureTarget;
     }
 
     public static string? FindFfmpeg()
@@ -438,7 +441,7 @@ public sealed class VideoRecorder : IDisposable
     private void CaptureLoop()
     {
         var ct = _cts.Token;
-        using var frameCapturer = ScreenCapture.CreateRecordingFrameCapturer(_region, _showCursor);
+        using var frameCapturer = RecordingFrameSourceFactory.Create(_region, _showCursor, _captureTarget);
         byte[]? captureBuffer = null;
         byte[]? lastFrameBuffer = null;
         int lastFrameByteCount = 0;
@@ -596,7 +599,7 @@ public sealed class VideoRecorder : IDisposable
         }
     }
 
-    private void CapturePreviewFrame(ScreenCapture.RecordingFrameCapturer frameCapturer)
+    private void CapturePreviewFrame(IRecordingFrameSource frameCapturer)
     {
         if (_firstFramePreview is not null)
             return;

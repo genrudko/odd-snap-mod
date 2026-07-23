@@ -20,6 +20,7 @@ public sealed class GifRecorder : IDisposable
     private readonly int _fps;
     private readonly int _maxDurationMs;
     private readonly bool _showCursor;
+    private readonly RecordingCaptureTarget? _captureTarget;
     private readonly string _tempDir;
     private readonly CancellationTokenSource _cts = new();
     private readonly BlockingCollection<(Bitmap frame, int index)> _frameQueue = new(boundedCapacity: 12);
@@ -38,12 +39,14 @@ public sealed class GifRecorder : IDisposable
     public TimeSpan Elapsed => DateTime.UtcNow - _startTime;
     public bool IsRecording => _captureThread?.IsAlive == true;
 
-    public GifRecorder(Rectangle region, int fps = 15, int maxDurationSeconds = 30, bool showCursor = false)
+    public GifRecorder(Rectangle region, int fps = 15, int maxDurationSeconds = 30, bool showCursor = false,
+        RecordingCaptureTarget? captureTarget = null)
     {
         _region = region;
         _fps = Math.Clamp(fps, 5, 30);
         _maxDurationMs = maxDurationSeconds * 1000;
         _showCursor = showCursor;
+        _captureTarget = captureTarget;
         _tempDir = Path.Combine(Path.GetTempPath(), $"oddsnap_gif_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_tempDir);
         _ffmpegPath = VideoRecorder.FindFfmpeg();
@@ -72,7 +75,7 @@ public sealed class GifRecorder : IDisposable
 
         try
         {
-            using var frameCapturer = ScreenCapture.CreateRecordingFrameCapturer(_region, _showCursor);
+            using var frameCapturer = RecordingFrameSourceFactory.Create(_region, _showCursor, _captureTarget);
 
             if (_initialCaptureDelayMs > 0)
             {

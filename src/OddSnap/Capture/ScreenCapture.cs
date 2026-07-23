@@ -344,7 +344,7 @@ public static class ScreenCapture
         }
     }
 
-    internal sealed class RecordingFrameCapturer : IDisposable
+    internal sealed class RecordingFrameCapturer : IRecordingFrameSource
     {
         private readonly Rectangle _region;
         private readonly bool _includeCursor;
