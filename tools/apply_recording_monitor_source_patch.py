@@ -15,6 +15,14 @@ def replace_once(path: Path, old: str, new: str) -> bool:
     return True
 
 
+def replace_if_present(path: Path, old: str, new: str) -> bool:
+    text = path.read_text(encoding="utf-8")
+    if old not in text:
+        return False
+    path.write_text(text.replace(old, new, 1), encoding="utf-8")
+    return True
+
+
 def main() -> None:
     changed = False
 
@@ -65,13 +73,40 @@ def main() -> None:
         "                LaunchGifRecording(RecordingCaptureTargetSelector.GetMonitorTargetAt(System.Windows.Forms.Cursor.Position));\n"
         "                break;\n"
         "            case \"_recordWindow\":\n"
+        "            {\n"
         "                var windowTarget = RecordingWindowTargetSelector.SelectWindowAt(System.Windows.Forms.Cursor.Position);\n"
         "                if (windowTarget is not null)\n"
         "                    LaunchGifRecording(windowTarget);\n"
         "                else\n"
         "                    ResetCapturing();\n"
-        "                break;\n",
+        "                break;\n"
+        "            }\n",
     )
+
+    duplicate_monitor_case = (
+        "            case \"_recordWindow\":\n"
+        "                var windowTarget = RecordingWindowTargetSelector.SelectWindowAt(System.Windows.Forms.Cursor.Position);\n"
+        "                if (windowTarget is not null)\n"
+        "                    LaunchGifRecording(windowTarget);\n"
+        "                else\n"
+        "                    ResetCapturing();\n"
+        "                break;\n"
+        "            case \"_recordMonitor\":\n"
+        "                LaunchGifRecording(RecordingCaptureTargetSelector.GetMonitorTargetAt(System.Windows.Forms.Cursor.Position));\n"
+        "                break;\n"
+    )
+    corrected_window_case = (
+        "            case \"_recordWindow\":\n"
+        "            {\n"
+        "                var windowTarget = RecordingWindowTargetSelector.SelectWindowAt(System.Windows.Forms.Cursor.Position);\n"
+        "                if (windowTarget is not null)\n"
+        "                    LaunchGifRecording(windowTarget);\n"
+        "                else\n"
+        "                    ResetCapturing();\n"
+        "                break;\n"
+        "            }\n"
+    )
+    changed |= replace_if_present(app_capture, duplicate_monitor_case, corrected_window_case)
 
     recording_lifecycle = ROOT / "src/OddSnap/Capture/RecordingForm.Recording.cs"
     changed |= replace_once(
