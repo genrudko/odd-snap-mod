@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - feature/snipping-launcher
+  pull_request:
+    branches:
+      - feature/recording-capture-targets
   workflow_dispatch:
 
 permissions:
