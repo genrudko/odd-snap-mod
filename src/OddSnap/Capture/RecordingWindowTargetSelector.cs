@@ -281,12 +281,12 @@ public static class RecordingWindowTargetSelector
             var result = new List<WindowCandidate>();
             int currentProcessId = Environment.ProcessId;
 
-            EnumWindows((window, _) =>
+            EnumWindows((window, parameter) =>
             {
                 if (!IsWindowVisible(window) || IsIconic(window))
                     return true;
 
-                _ = GetWindowThreadProcessId(window, out uint processId);
+                GetWindowThreadProcessId(window, out uint processId);
                 if (processId == currentProcessId || processId == 0)
                     return true;
 
@@ -302,7 +302,7 @@ public static class RecordingWindowTargetSelector
                     return true;
 
                 var titleBuilder = new StringBuilder(titleLength + 1);
-                _ = GetWindowText(window, titleBuilder, titleBuilder.Capacity);
+                GetWindowText(window, titleBuilder, titleBuilder.Capacity);
                 string title = titleBuilder.ToString().Trim();
                 if (title.Length == 0)
                     return true;
