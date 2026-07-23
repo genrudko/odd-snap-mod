@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   snapshot:
@@ -19,7 +19,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: feature/snipping-launcher
           fetch-depth: 0
+
+      - name: Apply snipping launcher source patch
+        run: python tools/apply_snipping_launcher_stage1.py
+
+      - name: Commit generated source changes
+        shell: bash
+        run: |
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .github/workflows/mod-build.yml docs/snipping-launcher-stage1.md src/OddSnap
+            git commit -m "feat: add Snipping Tool-style capture launcher"
+            git push origin HEAD:feature/snipping-launcher
+          else
+            echo "No source changes to commit."
+          fi
 
       - name: Upload source tree
         uses: actions/upload-artifact@v4
