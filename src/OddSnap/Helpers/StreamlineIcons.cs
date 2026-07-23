@@ -30,6 +30,7 @@ public static class StreamlineIcons
     public static void Preload()
     {
         _ = FluentIconData.Icons.Count;
+        _ = RecordingTargetIconData.Icons.Count;
     }
 
     public static Bitmap? GetIcon(string id, bool active = false)
@@ -75,7 +76,6 @@ public static class StreamlineIcons
         var fresh = CreateGdiBitmap(source);
         if (GdiBitmapCache.Count >= GdiBitmapCacheLimit)
         {
-            // Bounded cache: drop everything when full. Icons re-render lazily.
             foreach (var entry in GdiBitmapCache)
             {
                 if (GdiBitmapCache.TryRemove(entry.Key, out var removed))
@@ -86,12 +86,15 @@ public static class StreamlineIcons
         if (GdiBitmapCache.TryAdd(key, fresh))
             return fresh;
 
-        // Lost the add race: dispose ours and return whatever the cache holds.
         fresh.Dispose();
         return GdiBitmapCache.TryGetValue(key, out var winner) ? winner : null;
     }
 
-    public static bool HasIcon(string id) => FluentIconData.Icons.ContainsKey(NormalizeIconId(id));
+    public static bool HasIcon(string id)
+    {
+        id = NormalizeIconId(id);
+        return RecordingTargetIconData.Icons.ContainsKey(id) || FluentIconData.Icons.ContainsKey(id);
+    }
 
     public static void DrawIcon(DrawingGraphics g, string id, RectangleF bounds, DrawingColor color, float iconInset = 7f, bool active = false)
     {
@@ -122,15 +125,15 @@ public static class StreamlineIcons
         return WpfCache.GetOrAdd(key, _ => RenderWpfUncached(id, color, size, active));
     }
 
-    private static string NormalizeIconId(string id) =>
-        string.Equals(id, "_recordMonitor", StringComparison.Ordinal)
-            ? "fullscreen"
-            : id;
+    private static string NormalizeIconId(string id) => id;
 
     private static BitmapSource? RenderWpfUncached(string id, DrawingColor color, int size, bool active)
     {
-        if (!FluentIconData.Icons.TryGetValue(id, out var icon))
+        if (!RecordingTargetIconData.TryGetIcon(id, out var icon) &&
+            !FluentIconData.Icons.TryGetValue(id, out icon))
+        {
             return null;
+        }
 
         var pathData = active ? icon.Filled : icon.Regular;
         if (string.IsNullOrWhiteSpace(pathData))
