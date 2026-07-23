@@ -1,4 +1,4 @@
-name: Apply recording monitor source patch
+name: Apply recording target source patch
 
 on:
   push:
@@ -35,6 +35,6 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/OddSnap/Models/AppSettings.cs src/OddSnap/App/App.Capture.cs src/OddSnap/Capture/RecordingForm.Recording.cs
-          git commit -m "feat: expose monitor recording from capture toolbar"
+          git add src/OddSnap/Models/AppSettings.cs src/OddSnap/App/App.Capture.cs src/OddSnap/Capture/RecordingForm.Recording.cs src/OddSnap/Capture/RecordingWindowTargetSelector.cs
+          git commit -m "fix: repair recording target source integration"
           git push origin HEAD:feature/recording-capture-targets
