@@ -140,7 +140,7 @@ public partial class SnippingResultWindow : Window
             var extension = HasExistingFile()
                 ? Path.GetExtension(_filePath!)
                 : ".png";
-            var dialog = new SaveFileDialog
+            var dialog = new Microsoft.Win32.SaveFileDialog
             {
                 FileName = HasExistingFile() ? Path.GetFileName(_filePath!) : "Screenshot.png",
                 DefaultExt = extension,
@@ -318,7 +318,7 @@ public partial class SnippingResultWindow : Window
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
 
-    private void Window_KeyDown(object sender, KeyEventArgs e)
+    private void Window_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (e.Key == Key.Escape)
             Close();
