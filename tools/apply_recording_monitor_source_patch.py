@@ -25,6 +25,12 @@ def main() -> None:
         '        new("_record",        "Record area",        ToolGlyphs.RecordGlyph, null, 2),\n'
         '        new("_recordMonitor", "Record monitor",     ToolGlyphs.FullscreenGlyph, null, 2),\n',
     )
+    changed |= replace_once(
+        app_settings,
+        '        new("_recordMonitor", "Record monitor",     ToolGlyphs.FullscreenGlyph, null, 2),\n',
+        '        new("_recordMonitor", "Record monitor",     ToolGlyphs.FullscreenGlyph, null, 2),\n'
+        '        new("_recordWindow",  "Record window",      ToolGlyphs.ActiveWindowGlyph, null, 2),\n',
+    )
 
     app_capture = ROOT / "src/OddSnap/App/App.Capture.cs"
     changed |= replace_once(
@@ -50,6 +56,22 @@ def main() -> None:
         "            default:\n"
         "                ResetCapturing();\n",
     )
+    changed |= replace_once(
+        app_capture,
+        "            case \"_recordMonitor\":\n"
+        "                LaunchGifRecording(RecordingCaptureTargetSelector.GetMonitorTargetAt(System.Windows.Forms.Cursor.Position));\n"
+        "                break;\n",
+        "            case \"_recordMonitor\":\n"
+        "                LaunchGifRecording(RecordingCaptureTargetSelector.GetMonitorTargetAt(System.Windows.Forms.Cursor.Position));\n"
+        "                break;\n"
+        "            case \"_recordWindow\":\n"
+        "                var windowTarget = RecordingWindowTargetSelector.SelectWindowAt(System.Windows.Forms.Cursor.Position);\n"
+        "                if (windowTarget is not null)\n"
+        "                    LaunchGifRecording(windowTarget);\n"
+        "                else\n"
+        "                    ResetCapturing();\n"
+        "                break;\n",
+    )
 
     recording_lifecycle = ROOT / "src/OddSnap/Capture/RecordingForm.Recording.cs"
     changed |= replace_once(
@@ -61,9 +83,9 @@ def main() -> None:
     )
 
     if changed:
-        print("Recording monitor source patch applied.")
+        print("Recording target source patch applied.")
     else:
-        print("Recording monitor source patch already applied.")
+        print("Recording target source patch already applied.")
 
 
 if __name__ == "__main__":
