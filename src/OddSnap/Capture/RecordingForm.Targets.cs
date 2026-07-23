@@ -58,7 +58,11 @@ public sealed partial class RecordingForm
         if (_state != State.Selecting || _captureTarget is null)
             return;
 
-        BeginInvoke(StartRecording);
+        BeginInvoke(new Action(() =>
+        {
+            StartRecording();
+            StartWindowChromeTracking();
+        }));
     }
 
     private void EnsureRegionCaptureTarget(Rectangle screenRegion)
