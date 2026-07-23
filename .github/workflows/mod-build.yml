@@ -32,14 +32,29 @@ jobs:
       - name: Build solution
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
           $output = dotnet build OddSnap.sln -c Release --no-restore --verbosity quiet 2>&1
           $exitCode = $LASTEXITCODE
+          $output | Set-Content -Path artifacts/build-full.log -Encoding utf8
+          $diagnostics = $output | Select-String -Pattern 'error CS|error NETSDK|error MSB'
+          $diagnostics | Set-Content -Path artifacts/compiler-errors.log -Encoding utf8
           $output | ForEach-Object { Write-Host $_ }
           if ($exitCode -ne 0) {
             Write-Host "`n=== Compiler diagnostics ==="
-            $output | Select-String -Pattern 'error CS|error NETSDK|error MSB' | ForEach-Object { Write-Host $_ }
+            $diagnostics | ForEach-Object { Write-Host $_ }
             exit $exitCode
           }
+
+      - name: Upload compiler diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OddSnap-compiler-diagnostics
+          path: |
+            artifacts/compiler-errors.log
+            artifacts/build-full.log
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Run tests
         run: dotnet test src/OddSnap.Tests/OddSnap.Tests.csproj -c Release --no-build --logger "console;verbosity=normal"
