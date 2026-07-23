@@ -112,6 +112,12 @@ public static class StreamlineIcons
 
     public static BitmapSource? RenderWpf(string id, DrawingColor color, int size, bool active = false)
     {
+        // The monitor-recording toolbar action is semantic rather than a standalone
+        // Fluent icon ID. Reuse the proven fullscreen monitor-shaped icon instead of
+        // falling through to an invisible/missing icon in the toolbar.
+        if (string.Equals(id, "_recordMonitor", StringComparison.Ordinal))
+            id = "fullscreen";
+
         var key = $"{id}|{active}|{color.ToArgb()}|{size}";
         if (WpfCache.Count >= WpfCacheLimit && !WpfCache.ContainsKey(key))
             WpfCache.Clear();
