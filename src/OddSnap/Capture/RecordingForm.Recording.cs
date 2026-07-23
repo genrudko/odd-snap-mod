@@ -37,7 +37,7 @@ public sealed partial class RecordingForm
 
         if (_format == Models.RecordingFormat.GIF)
         {
-            _recorder = new GifRecorder(screenRegion, _fps, _maxDuration, _showCursor);
+            _recorder = new GifRecorder(screenRegion, _fps, _maxDuration, _showCursor, _captureTarget);
         }
         else
         {
@@ -48,7 +48,7 @@ public sealed partial class RecordingForm
                 _ => VideoRecorder.Format.MP4
             };
             _videoRecorder = new VideoRecorder(screenRegion, vfmt, _fps, _maxDuration, _maxHeight,
-                _showCursor, _recordMic, _micDeviceId, _recordDesktop, _desktopDeviceId);
+                _showCursor, _recordMic, _micDeviceId, _recordDesktop, _desktopDeviceId, _captureTarget);
         }
         _state = State.Recording;
         Cursor = Cursors.Default;
