@@ -281,7 +281,7 @@ internal sealed class WindowsGraphicsCaptureFrameSource : IRecordingFrameSource
             new Vortice.Mathematics.Box(0, 0, 0, copyWidth, copyHeight, 1));
 
         Array.Clear(buffer, 0, buffer.Length);
-        var mapped = context.Map(stagingTexture, 0, MapMode.Read, MapFlags.None);
+        var mapped = context.Map(stagingTexture, 0, MapMode.Read, Vortice.Direct3D11.MapFlags.None);
         try
         {
             int sourceRowPitch = checked((int)mapped.RowPitch);
