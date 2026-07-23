@@ -6,6 +6,7 @@ on:
       - feature/recording-capture-targets
     paths:
       - tools/apply_recording_monitor_source_patch.py
+      - tools/apply_recording_pause_repair.py
       - .github/workflows/apply-recording-monitor-source-patch.yml
   workflow_dispatch:
 
@@ -22,8 +23,10 @@ jobs:
           ref: feature/recording-capture-targets
           fetch-depth: 0
 
-      - name: Apply source patch
-        run: python tools/apply_recording_monitor_source_patch.py
+      - name: Apply source patches
+        run: |
+          python tools/apply_recording_monitor_source_patch.py
+          python tools/apply_recording_pause_repair.py
 
       - name: Commit generated source changes
         shell: pwsh
