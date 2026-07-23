@@ -1,0 +1,40 @@
+name: Apply recording monitor source patch
+
+on:
+  push:
+    branches:
+      - feature/recording-capture-targets
+    paths:
+      - tools/apply_recording_monitor_source_patch.py
+      - .github/workflows/apply-recording-monitor-source-patch.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/recording-capture-targets
+          fetch-depth: 0
+
+      - name: Apply source patch
+        run: python tools/apply_recording_monitor_source_patch.py
+
+      - name: Commit generated source changes
+        shell: pwsh
+        run: |
+          if (-not (git status --porcelain)) {
+            Write-Host "No source changes to commit."
+            exit 0
+          }
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/OddSnap/Models/AppSettings.cs src/OddSnap/App/App.Capture.cs src/OddSnap/Capture/RecordingForm.Recording.cs
+          git commit -m "feat: expose monitor recording from capture toolbar"
+          git push origin HEAD:feature/recording-capture-targets
