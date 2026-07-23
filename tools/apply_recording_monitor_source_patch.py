@@ -136,6 +136,90 @@ def main() -> None:
         "        EnsureRegionCaptureTarget(screenRegion);\n\n"
         "        if (_format == Models.RecordingFormat.GIF)\n",
     )
+    changed |= replace_once(
+        recording_lifecycle,
+        "            _recorder = new GifRecorder(screenRegion, _fps, _maxDuration, _showCursor);\n",
+        "            _recorder = new GifRecorder(screenRegion, _fps, _maxDuration, _showCursor, _captureTarget);\n",
+    )
+    changed |= replace_once(
+        recording_lifecycle,
+        "            _videoRecorder = new VideoRecorder(screenRegion, vfmt, _fps, _maxDuration, _maxHeight,\n"
+        "                _showCursor, _recordMic, _micDeviceId, _recordDesktop, _desktopDeviceId);\n",
+        "            _videoRecorder = new VideoRecorder(screenRegion, vfmt, _fps, _maxDuration, _maxHeight,\n"
+        "                _showCursor, _recordMic, _micDeviceId, _recordDesktop, _desktopDeviceId, _captureTarget);\n",
+    )
+
+    screen_capture = ROOT / "src/OddSnap/Capture/ScreenCapture.cs"
+    changed |= replace_once(
+        screen_capture,
+        "    internal sealed class RecordingFrameCapturer : IDisposable\n",
+        "    internal sealed class RecordingFrameCapturer : IRecordingFrameSource\n",
+    )
+
+    video_recorder = ROOT / "src/OddSnap/Capture/VideoRecorder.cs"
+    changed |= replace_once(
+        video_recorder,
+        "    private readonly string? _desktopDeviceId;\n"
+        "    private readonly CancellationTokenSource _cts = new();\n",
+        "    private readonly string? _desktopDeviceId;\n"
+        "    private readonly RecordingCaptureTarget? _captureTarget;\n"
+        "    private readonly CancellationTokenSource _cts = new();\n",
+    )
+    changed |= replace_once(
+        video_recorder,
+        "                         bool recordMic = false, string? micDeviceId = null,\n"
+        "                         bool recordDesktop = false, string? desktopDeviceId = null)\n",
+        "                         bool recordMic = false, string? micDeviceId = null,\n"
+        "                         bool recordDesktop = false, string? desktopDeviceId = null,\n"
+        "                         RecordingCaptureTarget? captureTarget = null)\n",
+    )
+    changed |= replace_once(
+        video_recorder,
+        "        _desktopDeviceId = desktopDeviceId;\n"
+        "    }\n",
+        "        _desktopDeviceId = desktopDeviceId;\n"
+        "        _captureTarget = captureTarget;\n"
+        "    }\n",
+    )
+    changed |= replace_once(
+        video_recorder,
+        "        using var frameCapturer = ScreenCapture.CreateRecordingFrameCapturer(_region, _showCursor);\n",
+        "        using var frameCapturer = RecordingFrameSourceFactory.Create(_region, _showCursor, _captureTarget);\n",
+    )
+    changed |= replace_once(
+        video_recorder,
+        "    private void CapturePreviewFrame(ScreenCapture.RecordingFrameCapturer frameCapturer)\n",
+        "    private void CapturePreviewFrame(IRecordingFrameSource frameCapturer)\n",
+    )
+
+    gif_recorder = ROOT / "src/OddSnap/Capture/GifRecorder.cs"
+    changed |= replace_once(
+        gif_recorder,
+        "    private readonly bool _showCursor;\n"
+        "    private readonly string _tempDir;\n",
+        "    private readonly bool _showCursor;\n"
+        "    private readonly RecordingCaptureTarget? _captureTarget;\n"
+        "    private readonly string _tempDir;\n",
+    )
+    changed |= replace_once(
+        gif_recorder,
+        "    public GifRecorder(Rectangle region, int fps = 15, int maxDurationSeconds = 30, bool showCursor = false)\n",
+        "    public GifRecorder(Rectangle region, int fps = 15, int maxDurationSeconds = 30, bool showCursor = false,\n"
+        "        RecordingCaptureTarget? captureTarget = null)\n",
+    )
+    changed |= replace_once(
+        gif_recorder,
+        "        _showCursor = showCursor;\n"
+        "        _tempDir = Path.Combine(Path.GetTempPath(), $\"oddsnap_gif_{Guid.NewGuid():N}\");\n",
+        "        _showCursor = showCursor;\n"
+        "        _captureTarget = captureTarget;\n"
+        "        _tempDir = Path.Combine(Path.GetTempPath(), $\"oddsnap_gif_{Guid.NewGuid():N}\");\n",
+    )
+    changed |= replace_once(
+        gif_recorder,
+        "            using var frameCapturer = ScreenCapture.CreateRecordingFrameCapturer(_region, _showCursor);\n",
+        "            using var frameCapturer = RecordingFrameSourceFactory.Create(_region, _showCursor, _captureTarget);\n",
+    )
 
     window_selector = ROOT / "src/OddSnap/Capture/RecordingWindowTargetSelector.cs"
     changed |= replace_once(
