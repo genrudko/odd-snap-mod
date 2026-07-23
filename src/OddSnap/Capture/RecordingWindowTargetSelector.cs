@@ -372,7 +372,7 @@ public static class RecordingWindowTargetSelector
         private static extern nint GetWindowLong32(nint window, int index);
 
         private static nint GetWindowLongPtr(nint window, int index) =>
-            nint.Size == 8 ? GetWindowLongPtr64(window, index) : GetWindowLong32(window, index);
+            IntPtr.Size == 8 ? GetWindowLongPtr64(window, index) : GetWindowLong32(window, index);
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern int GetWindowTextLength(nint window);
