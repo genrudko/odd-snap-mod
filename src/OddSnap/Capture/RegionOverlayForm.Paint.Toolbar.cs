@@ -66,6 +66,10 @@ public sealed partial class RegionOverlayForm
         {
             var btn = _toolbarButtons[i];
             bool active = _toolbarModes[i] is { } && string.Equals(_toolbarToolIds[i], _activeToolId, StringComparison.OrdinalIgnoreCase);
+            if (_toolbarToolIds[i] == "_snipScreenshot")
+                active = _snippingLauncherMode == SnippingLauncherMode.Screenshot;
+            else if (_toolbarToolIds[i] == "_snipRecording")
+                active = _snippingLauncherMode == SnippingLauncherMode.Recording;
             if (i == _moreButtonIndex) active = flyoutToolActive;
             bool hover = _hoveredButton == i;
 

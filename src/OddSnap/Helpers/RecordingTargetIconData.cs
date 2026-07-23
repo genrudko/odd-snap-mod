@@ -10,6 +10,9 @@ internal static class RecordingTargetIconData
     internal static readonly IReadOnlyDictionary<string, (string Regular, string Filled)> Icons =
         new Dictionary<string, (string Regular, string Filled)>(StringComparer.Ordinal)
         {
+            ["camera"] = (
+                "M6.5 4 7.6 2.35A.75.75 0 0 1 8.22 2h3.56c.25 0 .49.13.62.35L13.5 4H15a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1.5Zm1.38-1L6.99 4.33A1.5 1.5 0 0 1 5.75 5H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-.75a1.5 1.5 0 0 1-1.24-.67L12.12 3H7.88ZM10 6.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7Zm0 1a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z",
+                "M7.6 2.35A.75.75 0 0 1 8.22 2h3.56c.25 0 .49.13.62.35L13.5 4H15a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1.5l1.1-1.65ZM10 6.25a3.75 3.75 0 1 0 0 7.5 3.75 3.75 0 0 0 0-7.5Z"),
             ["_record"] = (
                 "M3 3h5v1H4v4H3V3Zm9 0h5v5h-1V4h-4V3ZM3 12h1v4h4v1H3v-5Zm13 0h1v5h-5v-1h4v-4Zm-6-4.25a2.25 2.25 0 1 1 0 4.5 2.25 2.25 0 0 1 0-4.5Zm0 1a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5Z",
                 "M2.75 2.5h5.5v1.5H4v4.25H2.5v-5.5c0-.14.11-.25.25-.25Zm9 0h5.5c.14 0 .25.11.25.25v5.5H16V4h-4.25V2.5ZM2.5 11.75H4V16h4.25v1.5h-5.5a.25.25 0 0 1-.25-.25v-5.5Zm13.5 0h1.5v5.5a.25.25 0 0 1-.25.25h-5.5V16H16v-4.25ZM10 7.25a2.75 2.75 0 1 1 0 5.5 2.75 2.75 0 0 1 0-5.5Z"),

@@ -698,12 +698,26 @@ public sealed partial class RegionOverlayForm
                 _isSelecting = false;
                 CloseSelectionAdorner();
                 CloseCaptureMagnifier();
+                bool isRecordingLauncher = _snippingLauncherMode == SnippingLauncherMode.Recording;
                 bool isCenter = _mode == CaptureMode.Center;
                 bool isOcr = _mode == CaptureMode.Ocr;
                 bool isScan = _mode == CaptureMode.Scan;
                 bool isSticker = _mode == CaptureMode.Sticker;
                 bool isUpscale = _mode == CaptureMode.Upscale;
-                if (isCenter && _selectionRect.Width > 2 && _selectionRect.Height > 2)
+                if (isRecordingLauncher && _selectionRect.Width > 2 && _selectionRect.Height > 2)
+                {
+                    _autoDetectRect = Rectangle.Empty;
+                    _autoDetectActive = false;
+                    _hasSelection = true;
+                    RefreshToolbar();
+                    Invalidate(InflateForRepaint(_selectionRect, 12));
+                }
+                else if (isRecordingLauncher)
+                {
+                    _hasSelection = false;
+                    Invalidate();
+                }
+                else if (isCenter && _selectionRect.Width > 2 && _selectionRect.Height > 2)
                 {
                     _autoDetectRect = Rectangle.Empty;
                     _autoDetectActive = false;

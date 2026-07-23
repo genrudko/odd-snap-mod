@@ -12,7 +12,7 @@ namespace OddSnap;
 
 public partial class App
 {
-    private void HandleCaptureResult(Bitmap result, bool useAiRedirect = false)
+    private void HandleCaptureResult(Bitmap result, bool useAiRedirect = false, bool openResultWindow = false)
     {
         var settings = _settingsService!.Settings;
         var ext = CaptureOutputService.GetExtension(settings.CaptureImageFormat);
@@ -66,7 +66,16 @@ public partial class App
                         hasFilePath: persisted.FilePath != null,
                         useAiRedirect: useAiRedirect);
 
-                    if (willAiRedirect)
+                    if (openResultWindow)
+                    {
+                        ShowSnippingImageResult(persisted.Output, persisted.FilePath);
+
+                        if (willAiRedirect)
+                            _ = StartAiRedirectAsync(persisted.FilePath!, persisted.HistoryEntry);
+                        else if (willUpload)
+                            _ = UploadFileAsync(persisted.FilePath!, "Screenshot", persisted.HistoryEntry);
+                    }
+                    else if (willAiRedirect)
                     {
                         persisted.Output.Dispose();
                         _ = StartAiRedirectAsync(persisted.FilePath!, persisted.HistoryEntry);

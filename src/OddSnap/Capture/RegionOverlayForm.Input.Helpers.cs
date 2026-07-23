@@ -107,6 +107,26 @@ public sealed partial class RegionOverlayForm
 
     private void ActivateToolbarItem(ToolDef tool)
     {
+        if (tool.Id == "_snipScreenshot")
+        {
+            SetSnippingLauncherMode(SnippingLauncherMode.Screenshot);
+            return;
+        }
+        if (tool.Id == "_snipRecording")
+        {
+            SetSnippingLauncherMode(SnippingLauncherMode.Recording);
+            return;
+        }
+        if (tool.Id == "_snipStart")
+        {
+            if (_snippingLauncherMode == SnippingLauncherMode.Recording &&
+                _selectionRect.Width > 2 && _selectionRect.Height > 2)
+            {
+                RecordingRegionSelected?.Invoke(_selectionRect);
+            }
+            return;
+        }
+
         if (tool.Mode is { } mode)
         {
             SetMode(mode, tool.Id);
@@ -114,6 +134,28 @@ public sealed partial class RegionOverlayForm
         }
 
         ToolbarActionRequested?.Invoke(tool.Id);
+    }
+
+    private void SetSnippingLauncherMode(SnippingLauncherMode mode)
+    {
+        if (_snippingLauncherMode == mode)
+            return;
+
+        CancelActivePointerInteraction();
+        _snippingLauncherMode = mode;
+        _mode = CaptureMode.Rectangle;
+        _activeToolId = "rect";
+        _hasSelection = false;
+        _hasDragged = false;
+        _selectionRect = Rectangle.Empty;
+        _freeformPoints.Clear();
+        _autoDetectRect = Rectangle.Empty;
+        _autoDetectActive = false;
+        CalcToolbar();
+        PositionToolbarForm();
+        RefreshToolbar();
+        Focus();
+        Invalidate();
     }
 
     private void SetToolColor(Color color)

@@ -20,7 +20,7 @@ public sealed partial class RegionOverlayForm
         {
             CloseCaptureMagnifier();
             if (btn == BtnCount - 1) { Cancel(); return; }     // close
-            if (btn == ColorButtonIndex) { ToggleColorPicker(); return; } // color dot
+            if (ColorButtonIndex >= 0 && btn == ColorButtonIndex) { ToggleColorPicker(); return; } // color dot
             if (_moreButtonIndex >= 0 && btn == _moreButtonIndex)
             {
                 if (_flyoutOpen)

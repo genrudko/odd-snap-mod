@@ -86,7 +86,7 @@ public partial class App
 
         if (Interlocked.CompareExchange(ref _isCapturing, 1, 0) != 0) return;
         HideSettingsForCapture();
-        LaunchOverlay(_settingsService!.Settings.DefaultCaptureMode);
+        LaunchOverlay(CaptureMode.Rectangle, snippingLauncherMode: SnippingLauncherMode.Screenshot);
     }
 
     private void OnToolHotkeyPressed(CaptureMode mode)
@@ -129,7 +129,7 @@ public partial class App
 
         if (Interlocked.CompareExchange(ref _isCapturing, 1, 0) != 0) return;
         HideSettingsForCapture();
-        LaunchGifRecording();
+        LaunchOverlay(CaptureMode.Rectangle, snippingLauncherMode: SnippingLauncherMode.Recording);
     }
 
     private void OnScrollCaptureHotkeyPressed()
