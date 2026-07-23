@@ -1,22 +1,24 @@
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace OddSnap.Capture;
 
 /// <summary>
 /// Resolves concrete recording targets from the current Windows desktop layout.
-/// Monitor recording uses a dedicated full-desktop picker so the target is confirmed
-/// explicitly instead of silently using whichever monitor contains the cursor.
+/// Monitor selection is performed in physical desktop pixels so mixed-DPI monitor
+/// layouts use the same coordinate space as the recording engine.
 /// </summary>
 public static class RecordingCaptureTargetSelector
 {
     public static IReadOnlyList<RecordingCaptureTarget> GetMonitorTargets()
     {
-        return GetOrderedScreens()
-            .Select((screen, index) => RecordingCaptureTarget.ForMonitor(
-                screen.Bounds,
-                BuildMonitorDisplayName(screen, index + 1)))
+        using var dpiScope = DpiAwarenessScope.EnterPerMonitorV2();
+        return GetOrderedMonitors()
+            .Select((monitor, index) => RecordingCaptureTarget.ForMonitor(
+                monitor.Bounds,
+                BuildMonitorDisplayName(monitor, index + 1)))
             .ToArray();
     }
 
@@ -34,6 +36,7 @@ public static class RecordingCaptureTargetSelector
         {
             try
             {
+                using var dpiScope = DpiAwarenessScope.EnterPerMonitorV2();
                 using var picker = new MonitorRecordingPickerForm(screenPoint);
                 picker.ShowDialog();
                 selectedTarget = picker.SelectedTarget;
@@ -63,48 +66,124 @@ public static class RecordingCaptureTargetSelector
         if (pickerError is not null)
             throw new InvalidOperationException("OddSnap could not open the monitor recording picker.", pickerError);
 
-        return selectedTarget ?? CreateTargetForScreen(Screen.FromPoint(screenPoint));
+        if (selectedTarget is not null)
+            return selectedTarget;
+
+        using var fallbackDpiScope = DpiAwarenessScope.EnterPerMonitorV2();
+        return CreateTargetForMonitor(FindMonitorAt(screenPoint, GetOrderedMonitors()));
     }
 
-    private static Screen[] GetOrderedScreens() =>
-        Screen.AllScreens
-            .OrderBy(screen => screen.Bounds.Top)
-            .ThenBy(screen => screen.Bounds.Left)
-            .ToArray();
-
-    private static RecordingCaptureTarget CreateTargetForScreen(Screen screen)
+    private static MonitorDescriptor[] GetOrderedMonitors()
     {
-        var orderedScreens = GetOrderedScreens();
+        var monitors = new List<MonitorDescriptor>();
+
+        NativeMethods.EnumDisplayMonitors(
+            nint.Zero,
+            nint.Zero,
+            (monitorHandle, _, _, _) =>
+            {
+                var info = new NativeMethods.MONITORINFOEX
+                {
+                    cbSize = Marshal.SizeOf<NativeMethods.MONITORINFOEX>()
+                };
+
+                if (!NativeMethods.GetMonitorInfo(monitorHandle, ref info))
+                    return true;
+
+                var bounds = Rectangle.FromLTRB(
+                    info.rcMonitor.Left,
+                    info.rcMonitor.Top,
+                    info.rcMonitor.Right,
+                    info.rcMonitor.Bottom);
+
+                monitors.Add(new MonitorDescriptor(
+                    monitorHandle,
+                    bounds,
+                    info.szDevice,
+                    (info.dwFlags & NativeMethods.MONITORINFOF_PRIMARY) != 0));
+
+                return true;
+            },
+            nint.Zero);
+
+        if (monitors.Count == 0)
+        {
+            monitors.AddRange(Screen.AllScreens.Select(screen => new MonitorDescriptor(
+                nint.Zero,
+                screen.Bounds,
+                screen.DeviceName,
+                screen.Primary)));
+        }
+
+        return monitors
+            .OrderBy(monitor => monitor.Bounds.Top)
+            .ThenBy(monitor => monitor.Bounds.Left)
+            .ToArray();
+    }
+
+    private static MonitorDescriptor FindMonitorAt(Point point, IReadOnlyList<MonitorDescriptor> monitors)
+    {
+        foreach (var monitor in monitors)
+        {
+            if (monitor.Bounds.Contains(point))
+                return monitor;
+        }
+
+        return monitors
+            .OrderBy(monitor => DistanceSquaredToRectangle(point, monitor.Bounds))
+            .First();
+    }
+
+    private static long DistanceSquaredToRectangle(Point point, Rectangle bounds)
+    {
+        int closestX = Math.Clamp(point.X, bounds.Left, bounds.Right - 1);
+        int closestY = Math.Clamp(point.Y, bounds.Top, bounds.Bottom - 1);
+        long dx = point.X - closestX;
+        long dy = point.Y - closestY;
+        return dx * dx + dy * dy;
+    }
+
+    private static RecordingCaptureTarget CreateTargetForMonitor(MonitorDescriptor monitor)
+    {
+        var orderedMonitors = GetOrderedMonitors();
         int ordinal = Array.FindIndex(
-            orderedScreens,
-            candidate => string.Equals(candidate.DeviceName, screen.DeviceName, StringComparison.OrdinalIgnoreCase));
+            orderedMonitors,
+            candidate => string.Equals(candidate.DeviceName, monitor.DeviceName, StringComparison.OrdinalIgnoreCase));
 
         return RecordingCaptureTarget.ForMonitor(
-            screen.Bounds,
-            BuildMonitorDisplayName(screen, ordinal >= 0 ? ordinal + 1 : 1));
+            monitor.Bounds,
+            BuildMonitorDisplayName(monitor, ordinal >= 0 ? ordinal + 1 : 1));
     }
 
-    private static string BuildMonitorDisplayName(Screen screen, int ordinal)
+    private static string BuildMonitorDisplayName(MonitorDescriptor monitor, int ordinal)
     {
-        string resolution = $"{screen.Bounds.Width} x {screen.Bounds.Height}";
-        string primary = screen.Primary ? " · Primary" : string.Empty;
+        string resolution = $"{monitor.Bounds.Width} x {monitor.Bounds.Height}";
+        string primary = monitor.Primary ? " · Primary" : string.Empty;
         return $"Monitor {ordinal} · {resolution}{primary}";
     }
+
+    private sealed record MonitorDescriptor(
+        nint Handle,
+        Rectangle Bounds,
+        string DeviceName,
+        bool Primary);
 
     private sealed class MonitorRecordingPickerForm : Form
     {
         private readonly Rectangle _virtualBounds;
-        private readonly Screen[] _screens;
-        private Screen _hoveredScreen;
+        private readonly MonitorDescriptor[] _monitors;
+        private MonitorDescriptor _hoveredMonitor;
 
         public MonitorRecordingPickerForm(Point initialScreenPoint)
         {
-            _virtualBounds = SystemInformation.VirtualScreen;
-            _screens = GetOrderedScreens();
-            _hoveredScreen = Screen.FromPoint(initialScreenPoint);
+            _monitors = GetOrderedMonitors();
+            _virtualBounds = Rectangle.Union(_monitors[0].Bounds, _monitors[0].Bounds);
+            foreach (var monitor in _monitors.Skip(1))
+                _virtualBounds = Rectangle.Union(_virtualBounds, monitor.Bounds);
+
+            _hoveredMonitor = FindMonitorAt(initialScreenPoint, _monitors);
 
             AutoScaleMode = AutoScaleMode.None;
-            Bounds = _virtualBounds;
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.Manual;
             ShowInTaskbar = false;
@@ -114,6 +193,13 @@ public static class RecordingCaptureTargetSelector
             BackColor = Color.Black;
             Opacity = 0.58;
             Cursor = Cursors.Hand;
+
+            SetBounds(
+                _virtualBounds.X,
+                _virtualBounds.Y,
+                _virtualBounds.Width,
+                _virtualBounds.Height,
+                BoundsSpecified.All);
 
             MouseMove += HandleMouseMove;
             MouseDown += HandleMouseDown;
@@ -137,12 +223,12 @@ public static class RecordingCaptureTargetSelector
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 
-            foreach (var screen in _screens)
+            foreach (var monitor in _monitors)
             {
-                var localBounds = ToLocal(screen.Bounds);
+                var localBounds = ToLocal(monitor.Bounds);
                 bool active = string.Equals(
-                    screen.DeviceName,
-                    _hoveredScreen.DeviceName,
+                    monitor.DeviceName,
+                    _hoveredMonitor.DeviceName,
                     StringComparison.OrdinalIgnoreCase);
 
                 using var fill = new SolidBrush(active
@@ -159,7 +245,7 @@ public static class RecordingCaptureTargetSelector
                 };
                 e.Graphics.DrawRectangle(border, localBounds);
 
-                DrawMonitorLabel(e.Graphics, screen, localBounds, active);
+                DrawMonitorLabel(e.Graphics, monitor, localBounds, active);
             }
 
             DrawInstruction(e.Graphics);
@@ -167,12 +253,12 @@ public static class RecordingCaptureTargetSelector
 
         private void HandleMouseMove(object? sender, MouseEventArgs e)
         {
-            var screenPoint = PointToScreen(e.Location);
-            var candidate = Screen.FromPoint(screenPoint);
-            if (string.Equals(candidate.DeviceName, _hoveredScreen.DeviceName, StringComparison.OrdinalIgnoreCase))
+            var screenPoint = new Point(e.X + _virtualBounds.X, e.Y + _virtualBounds.Y);
+            var candidate = FindMonitorAt(screenPoint, _monitors);
+            if (string.Equals(candidate.DeviceName, _hoveredMonitor.DeviceName, StringComparison.OrdinalIgnoreCase))
                 return;
 
-            _hoveredScreen = candidate;
+            _hoveredMonitor = candidate;
             Invalidate();
         }
 
@@ -181,8 +267,9 @@ public static class RecordingCaptureTargetSelector
             if (e.Button != MouseButtons.Left)
                 return;
 
-            _hoveredScreen = Screen.FromPoint(PointToScreen(e.Location));
-            SelectedTarget = CreateTargetForScreen(_hoveredScreen);
+            var screenPoint = new Point(e.X + _virtualBounds.X, e.Y + _virtualBounds.Y);
+            _hoveredMonitor = FindMonitorAt(screenPoint, _monitors);
+            SelectedTarget = CreateTargetForMonitor(_hoveredMonitor);
             DialogResult = DialogResult.OK;
             Close();
         }
@@ -191,27 +278,33 @@ public static class RecordingCaptureTargetSelector
         {
             if (e.KeyCode is Keys.Enter or Keys.Space)
             {
-                SelectedTarget = CreateTargetForScreen(_hoveredScreen);
+                SelectedTarget = CreateTargetForMonitor(_hoveredMonitor);
                 DialogResult = DialogResult.OK;
+                Close();
+                e.Handled = true;
+            }
+            else if (e.KeyCode == Keys.Escape)
+            {
+                DialogResult = DialogResult.Cancel;
                 Close();
                 e.Handled = true;
             }
         }
 
-        private Rectangle ToLocal(Rectangle screenBounds) => new(
-            screenBounds.X - _virtualBounds.X,
-            screenBounds.Y - _virtualBounds.Y,
-            screenBounds.Width,
-            screenBounds.Height);
+        private Rectangle ToLocal(Rectangle monitorBounds) => new(
+            monitorBounds.X - _virtualBounds.X,
+            monitorBounds.Y - _virtualBounds.Y,
+            monitorBounds.Width,
+            monitorBounds.Height);
 
-        private void DrawMonitorLabel(Graphics graphics, Screen screen, Rectangle bounds, bool active)
+        private void DrawMonitorLabel(Graphics graphics, MonitorDescriptor monitor, Rectangle bounds, bool active)
         {
             int ordinal = Array.FindIndex(
-                _screens,
-                candidate => string.Equals(candidate.DeviceName, screen.DeviceName, StringComparison.OrdinalIgnoreCase)) + 1;
+                _monitors,
+                candidate => string.Equals(candidate.DeviceName, monitor.DeviceName, StringComparison.OrdinalIgnoreCase)) + 1;
 
             string title = $"MONITOR {ordinal}";
-            string subtitle = $"{screen.Bounds.Width} × {screen.Bounds.Height}{(screen.Primary ? " · PRIMARY" : string.Empty)}";
+            string subtitle = $"{monitor.Bounds.Width} × {monitor.Bounds.Height}{(monitor.Primary ? " · PRIMARY" : string.Empty)}";
 
             float scale = Math.Clamp(Math.Min(bounds.Width / 1920f, bounds.Height / 1080f), 0.75f, 1.5f);
             using var titleFont = new Font("Segoe UI Semibold", 24f * scale, FontStyle.Bold, GraphicsUnit.Pixel);
@@ -238,7 +331,7 @@ public static class RecordingCaptureTargetSelector
 
         private void DrawInstruction(Graphics graphics)
         {
-            const string instruction = "Select a monitor to record · Click to confirm";
+            const string instruction = "Select a monitor to record · Click to confirm · Esc to cancel";
             using var font = new Font("Segoe UI Semibold", 18f, FontStyle.Bold, GraphicsUnit.Pixel);
             var size = graphics.MeasureString(instruction, font);
             var panel = new RectangleF(
@@ -264,6 +357,78 @@ public static class RecordingCaptureTargetSelector
             path.AddArc(bounds.Left, bounds.Bottom - diameter, diameter, diameter, 90, 90);
             path.CloseFigure();
             return path;
+        }
+    }
+
+    private sealed class DpiAwarenessScope : IDisposable
+    {
+        private readonly nint _previousContext;
+
+        private DpiAwarenessScope(nint previousContext)
+        {
+            _previousContext = previousContext;
+        }
+
+        public static DpiAwarenessScope EnterPerMonitorV2()
+        {
+            nint previous = NativeMethods.SetThreadDpiAwarenessContext(NativeMethods.DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+            return new DpiAwarenessScope(previous);
+        }
+
+        public void Dispose()
+        {
+            if (_previousContext != nint.Zero)
+                NativeMethods.SetThreadDpiAwarenessContext(_previousContext);
+        }
+    }
+
+    private static class NativeMethods
+    {
+        internal const uint MONITORINFOF_PRIMARY = 0x00000001;
+        internal static readonly nint DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = new(-4);
+
+        internal delegate bool MonitorEnumProc(
+            nint monitorHandle,
+            nint monitorDeviceContext,
+            nint monitorRectangle,
+            nint userData);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool EnumDisplayMonitors(
+            nint deviceContext,
+            nint clipRectangle,
+            MonitorEnumProc callback,
+            nint userData);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool GetMonitorInfo(
+            nint monitorHandle,
+            ref MONITORINFOEX monitorInfo);
+
+        [DllImport("user32.dll")]
+        internal static extern nint SetThreadDpiAwarenessContext(nint dpiContext);
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct RECT
+        {
+            public int Left;
+            public int Top;
+            public int Right;
+            public int Bottom;
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+        internal struct MONITORINFOEX
+        {
+            public int cbSize;
+            public RECT rcMonitor;
+            public RECT rcWork;
+            public uint dwFlags;
+
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+            public string szDevice;
         }
     }
 }
