@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   validate:
@@ -18,26 +18,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: feature/snipping-launcher
-          fetch-depth: 0
-
-      - name: Apply snipping launcher source patch
-        run: |
-          python tools/apply_snipping_launcher_stage1.py
-          python tools/apply_snipping_launcher_repair1.py
-          python tools/apply_snipping_launcher_repair2.py
-
-      - name: Exclude workflow-only validation change
-        shell: pwsh
-        run: git checkout -- .github/workflows/mod-build.yml
-
-      - name: Show generated changes
-        shell: bash
-        run: |
-          git status --short
-          git diff --check
-          git diff --name-only
 
       - name: Setup .NET 9
         uses: actions/setup-dotnet@v4
@@ -62,19 +42,6 @@ jobs:
 
       - name: Publish portable Windows x64 build
         run: dotnet publish src/OddSnap/OddSnap.csproj -c Release -r win-x64 --self-contained false -o artifacts/OddSnap-Mod-win-x64
-
-      - name: Commit generated source changes
-        shell: bash
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/snipping-launcher-stage1.md src/OddSnap
-          if git diff --cached --quiet; then
-            echo "No source changes to commit."
-          else
-            git commit -m "feat: add Snipping Tool-style capture launcher"
-            git push origin HEAD:feature/snipping-launcher
-          fi
 
       - name: Upload portable build
         uses: actions/upload-artifact@v4
