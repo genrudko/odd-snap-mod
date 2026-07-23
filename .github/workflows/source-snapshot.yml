@@ -23,7 +23,9 @@ jobs:
           fetch-depth: 0
 
       - name: Apply snipping launcher source patch
-        run: python tools/apply_snipping_launcher_stage1.py
+        run: |
+          python tools/apply_snipping_launcher_stage1.py
+          python tools/apply_snipping_launcher_repair1.py
 
       - name: Exclude workflow-only validation change
         shell: pwsh
