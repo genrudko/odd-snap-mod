@@ -57,7 +57,6 @@ public sealed class GifRecorder : IDisposable
     public void Start(int initialCaptureDelayMs = DefaultInitialCaptureDelayMs)
     {
         _initialCaptureDelayMs = Math.Max(0, initialCaptureDelayMs);
-        _startTime = DateTime.UtcNow;
 
         // Producer: capture frames
         _captureThread = new Thread(CaptureLoop) { IsBackground = true, Name = "GifCapture" };
