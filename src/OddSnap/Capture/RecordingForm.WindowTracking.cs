@@ -7,6 +7,43 @@ public sealed partial class RecordingForm
 {
     private Rectangle _trackedWindowScreenBounds;
     private bool _trackedWindowChromeVisible = true;
+    private System.Windows.Forms.Timer? _windowChromeTrackingTimer;
+
+    private void StartWindowChromeTracking()
+    {
+        if (_captureTarget is null ||
+            _captureTarget.Kind != RecordingCaptureTargetKind.Window ||
+            _captureTarget.WindowHandle == nint.Zero)
+        {
+            return;
+        }
+
+        UpdateTrackedWindowChrome();
+
+        if (_windowChromeTrackingTimer is null)
+        {
+            _windowChromeTrackingTimer = new System.Windows.Forms.Timer { Interval = 100 };
+            _windowChromeTrackingTimer.Tick += (_, _) =>
+            {
+                if (_state != State.Recording)
+                {
+                    _windowChromeTrackingTimer?.Stop();
+                    return;
+                }
+
+                UpdateTrackedWindowChrome();
+            };
+
+            Disposed += (_, _) =>
+            {
+                _windowChromeTrackingTimer?.Stop();
+                _windowChromeTrackingTimer?.Dispose();
+                _windowChromeTrackingTimer = null;
+            };
+        }
+
+        _windowChromeTrackingTimer.Start();
+    }
 
     private void UpdateTrackedWindowChrome()
     {
