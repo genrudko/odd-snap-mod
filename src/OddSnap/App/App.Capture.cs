@@ -725,15 +725,6 @@ public partial class App
                     ResetCapturing();
                 break;
             }
-            case "_recordWindow":
-            {
-                var windowTarget = RecordingWindowTargetSelector.SelectWindowAt(System.Windows.Forms.Cursor.Position);
-                if (windowTarget is not null)
-                    LaunchGifRecording(windowTarget);
-                else
-                    ResetCapturing();
-                break;
-            }
             default:
                 ResetCapturing();
                 break;
