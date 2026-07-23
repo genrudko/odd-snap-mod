@@ -716,6 +716,13 @@ public partial class App
             case "_recordMonitor":
                 LaunchGifRecording(RecordingCaptureTargetSelector.GetMonitorTargetAt(System.Windows.Forms.Cursor.Position));
                 break;
+            case "_recordWindow":
+                var windowTarget = RecordingWindowTargetSelector.SelectWindowAt(System.Windows.Forms.Cursor.Position);
+                if (windowTarget is not null)
+                    LaunchGifRecording(windowTarget);
+                else
+                    ResetCapturing();
+                break;
             default:
                 ResetCapturing();
                 break;
