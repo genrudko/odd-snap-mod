@@ -8,7 +8,7 @@ namespace OddSnap.Capture;
 
 internal sealed class RecordingBorderForm : Form
 {
-    private readonly Rectangle _recordingScreenBounds;
+    private Rectangle _recordingScreenBounds;
     private readonly int _pad;
     private Bitmap? _surface;
     private Graphics? _surfaceGraphics;
@@ -43,6 +43,19 @@ internal sealed class RecordingBorderForm : Form
     {
         base.OnHandleCreated(e);
         CaptureWindowExclusion.Apply(this);
+    }
+
+    public void SetRecordingScreenBounds(Rectangle recordingScreenBounds)
+    {
+        if (recordingScreenBounds.Width <= 0 || recordingScreenBounds.Height <= 0)
+            return;
+
+        if (_recordingScreenBounds == recordingScreenBounds)
+            return;
+
+        _recordingScreenBounds = recordingScreenBounds;
+        Bounds = Rectangle.Inflate(recordingScreenBounds, _pad, _pad);
+        UpdateSurface();
     }
 
     public void UpdateSurface()

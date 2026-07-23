@@ -38,6 +38,7 @@ public sealed class VideoRecorder : IDisposable
     private readonly string? _micDeviceId;
     private readonly bool _recordDesktop;
     private readonly string? _desktopDeviceId;
+    private readonly RecordingCaptureTarget? _captureTarget;
     private readonly CancellationTokenSource _cts = new();
     private readonly object _previewFrameLock = new();
 
@@ -50,11 +51,9 @@ public sealed class VideoRecorder : IDisposable
     private int _capturedFrameCount;
     private int _duplicatedFrameCount;
     private int _droppedFrameCount;
-    private DateTime _startTime;
+    private readonly RecordingPauseClock _pauseClock = new();
     private TimeSpan _recordedDuration = TimeSpan.Zero;
-    private bool _isPaused;
     private bool _disposed;
-    private readonly object _pauseLock = new();
     private int _initialCaptureDelayMs = DefaultInitialCaptureDelayMs;
     private Thread? _delayedAudioStartThread;
 
@@ -73,9 +72,9 @@ public sealed class VideoRecorder : IDisposable
     public int CapturedFrameCount => _capturedFrameCount;
     public int DuplicatedFrameCount => _duplicatedFrameCount;
     public int DroppedFrameCount => _droppedFrameCount;
-    public TimeSpan Elapsed => DateTime.UtcNow - _startTime;
+    public TimeSpan Elapsed => _pauseClock.Elapsed;
     public bool IsRecording => _captureThread?.IsAlive == true;
-    public bool IsPaused => _isPaused;
+    public bool IsPaused => _pauseClock.IsPaused;
 
     public Bitmap? GetFirstFrame()
     {
@@ -87,7 +86,8 @@ public sealed class VideoRecorder : IDisposable
                          int maxDurationSeconds = 300, int maxHeight = 0,
                          bool showCursor = false,
                          bool recordMic = false, string? micDeviceId = null,
-                         bool recordDesktop = false, string? desktopDeviceId = null)
+                         bool recordDesktop = false, string? desktopDeviceId = null,
+                         RecordingCaptureTarget? captureTarget = null)
     {
         _region = region;
         _format = format;
@@ -99,6 +99,7 @@ public sealed class VideoRecorder : IDisposable
         _micDeviceId = micDeviceId;
         _recordDesktop = recordDesktop;
         _desktopDeviceId = desktopDeviceId;
+        _captureTarget = captureTarget;
     }
 
     public static string? FindFfmpeg()
@@ -213,7 +214,7 @@ public sealed class VideoRecorder : IDisposable
             throw new FileNotFoundException("FFmpeg not found. Place ffmpeg.exe in the app folder or install it to PATH.");
 
         _initialCaptureDelayMs = Math.Max(0, initialCaptureDelayMs);
-        _startTime = DateTime.UtcNow;
+        _recordedDuration = TimeSpan.Zero;
 
         // Compute output dimensions
         int outW = _region.Width;
@@ -322,7 +323,12 @@ public sealed class VideoRecorder : IDisposable
             writer = new WaveFileWriter(wavPath, capture.WaveFormat);
             dataAvailableHandler = (_, e) =>
             {
-                try { writer?.Write(e.Buffer, 0, e.BytesRecorded); } catch { }
+                try
+                {
+                    if (!_pauseClock.IsPaused)
+                        writer?.Write(e.Buffer, 0, e.BytesRecorded);
+                }
+                catch { }
             };
             capture.DataAvailable += dataAvailableHandler;
             capture.StartRecording();
@@ -375,7 +381,12 @@ public sealed class VideoRecorder : IDisposable
             writer = new WaveFileWriter(wavPath, capture.WaveFormat);
             dataAvailableHandler = (_, e) =>
             {
-                try { writer?.Write(e.Buffer, 0, e.BytesRecorded); } catch { }
+                try
+                {
+                    if (!_pauseClock.IsPaused)
+                        writer?.Write(e.Buffer, 0, e.BytesRecorded);
+                }
+                catch { }
             };
             capture.DataAvailable += dataAvailableHandler;
             capture.StartRecording();
@@ -421,28 +432,17 @@ public sealed class VideoRecorder : IDisposable
         return 0;
     }
 
-    public void Pause()
-    {
-        lock (_pauseLock) _isPaused = true;
-    }
+    public void Pause() => _pauseClock.Pause();
 
-    public void Resume()
-    {
-        lock (_pauseLock)
-        {
-            _isPaused = false;
-            Monitor.PulseAll(_pauseLock);
-        }
-    }
+    public void Resume() => _pauseClock.Resume();
 
     private void CaptureLoop()
     {
         var ct = _cts.Token;
-        using var frameCapturer = ScreenCapture.CreateRecordingFrameCapturer(_region, _showCursor);
+        using var frameCapturer = RecordingFrameSourceFactory.Create(_region, _showCursor, _captureTarget);
         byte[]? captureBuffer = null;
         byte[]? lastFrameBuffer = null;
         int lastFrameByteCount = 0;
-        double frameIntervalTicks = (double)Stopwatch.Frequency / _fps;
 
         if (_initialCaptureDelayMs > 0)
         {
@@ -450,22 +450,18 @@ public sealed class VideoRecorder : IDisposable
             catch (ThreadInterruptedException) { return; }
         }
 
-        long activeStartTicks = Stopwatch.GetTimestamp();
+        _pauseClock.Start();
         while (!ct.IsCancellationRequested)
         {
-            var activeElapsed = Stopwatch.GetElapsedTime(activeStartTicks);
+            _pauseClock.WaitWhilePaused(ct);
+            if (ct.IsCancellationRequested)
+                break;
+
+            var activeElapsed = _pauseClock.Elapsed;
             if (activeElapsed.TotalMilliseconds >= _maxDurationMs)
                 break;
 
-            // Pause support
-            lock (_pauseLock)
-            {
-                while (_isPaused && !ct.IsCancellationRequested)
-                    Monitor.Wait(_pauseLock, 100);
-            }
-            if (ct.IsCancellationRequested) break;
-
-            WaitForNextFrameSlot(activeStartTicks, frameIntervalTicks, ct);
+            WaitForNextFrameSlot(ct);
             if (ct.IsCancellationRequested)
                 break;
 
@@ -494,11 +490,11 @@ public sealed class VideoRecorder : IDisposable
             if (!capturedFrame && lastFrameBuffer == null)
                 continue;
 
-            int targetFrameCount = GetExpectedFrameCount(Stopwatch.GetElapsedTime(activeStartTicks), _fps);
+            int targetFrameCount = GetExpectedFrameCount(_pauseClock.Elapsed, _fps);
             DuplicateLastFrameUntil(lastFrameBuffer, lastFrameByteCount, targetFrameCount);
         }
 
-        _recordedDuration = Stopwatch.GetElapsedTime(activeStartTicks);
+        _recordedDuration = _pauseClock.Elapsed;
         if (lastFrameBuffer != null && lastFrameByteCount > 0)
         {
             int targetFrameCount = GetExpectedFrameCount(_recordedDuration, _fps);
@@ -506,17 +502,20 @@ public sealed class VideoRecorder : IDisposable
         }
     }
 
-    private void WaitForNextFrameSlot(long activeStartTicks, double frameIntervalTicks, CancellationToken ct)
+    private void WaitForNextFrameSlot(CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
-            long nextDueTicks = activeStartTicks + (long)Math.Round(_frameCount * frameIntervalTicks);
-            long nowTicks = Stopwatch.GetTimestamp();
-            long remainingTicks = nextDueTicks - nowTicks;
-            if (remainingTicks <= 0)
+            _pauseClock.WaitWhilePaused(ct);
+            if (ct.IsCancellationRequested)
                 break;
 
-            int sleepMs = (int)Math.Min(20, remainingTicks * 1000 / Stopwatch.Frequency);
+            double nextDueSeconds = _frameCount / (double)_fps;
+            double remainingMs = (nextDueSeconds - _pauseClock.Elapsed.TotalSeconds) * 1000d;
+            if (remainingMs <= 0d)
+                break;
+
+            int sleepMs = (int)Math.Min(20d, Math.Ceiling(remainingMs));
             if (sleepMs <= 1)
             {
                 Thread.Yield();
@@ -534,7 +533,7 @@ public sealed class VideoRecorder : IDisposable
         _cts.Cancel();
         try { _delayedAudioStartThread?.Join(5_000); } catch { }
         // Unpause if paused so capture thread can exit
-        lock (_pauseLock) { _isPaused = false; Monitor.PulseAll(_pauseLock); }
+        _pauseClock.Resume();
         _captureThread?.Join(10_000);
 
         // Stop audio capture
@@ -596,7 +595,7 @@ public sealed class VideoRecorder : IDisposable
         }
     }
 
-    private void CapturePreviewFrame(ScreenCapture.RecordingFrameCapturer frameCapturer)
+    private void CapturePreviewFrame(IRecordingFrameSource frameCapturer)
     {
         if (_firstFramePreview is not null)
             return;
@@ -792,7 +791,7 @@ public sealed class VideoRecorder : IDisposable
     {
         _cts.Cancel();
         try { _delayedAudioStartThread?.Join(3_000); } catch { }
-        lock (_pauseLock) { _isPaused = false; Monitor.PulseAll(_pauseLock); }
+        _pauseClock.Resume();
         _captureThread?.Join(3000);
         StopAudioCapture();
         try { _ffmpegStdin?.Close(); } catch { }
@@ -807,7 +806,7 @@ public sealed class VideoRecorder : IDisposable
         if (_disposed) return;
         _disposed = true;
         _cts.Cancel();
-        lock (_pauseLock) { _isPaused = false; Monitor.PulseAll(_pauseLock); }
+        _pauseClock.Resume();
         try { _delayedAudioStartThread?.Join(3_000); } catch { }
         JoinThreadIfNotCurrent(_captureThread, 3_000);
         StopAudioCapture();

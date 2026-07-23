@@ -392,7 +392,9 @@ public sealed record ToolDef(string Id, string Label, char Icon, CaptureMode? Mo
         new("_fullscreen",    "Fullscreen capture", ToolGlyphs.FullscreenGlyph, null, 2),
         new("_activeWindow",  "Active window",      ToolGlyphs.ActiveWindowGlyph, null, 2),
         new("_scrollCapture", "Scroll capture",     ToolGlyphs.ScrollCaptureGlyph, null, 2),
-        new("_record",        "Record",             ToolGlyphs.RecordGlyph, null, 2),
+        new("_record",        "Record area",        ToolGlyphs.RecordGlyph, null, 2),
+        new("_recordMonitor", "Record monitor",     ToolGlyphs.FullscreenGlyph, null, 2),
+        new("_recordWindow",  "Record window",      ToolGlyphs.ActiveWindowGlyph, null, 2),
     };
 
     public static ToolDef[] AllToolbarItems() =>

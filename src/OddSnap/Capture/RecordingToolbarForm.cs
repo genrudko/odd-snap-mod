@@ -107,8 +107,9 @@ internal sealed class RecordingToolbarForm : Form
         base.OnMouseMove(e);
 
         int previous = _hoveredButton;
-        _hoveredButton = RecordingForm.GetRecordingToolbarStopButton(ClientRectangle).Contains(e.Location) ? 0
-            : RecordingForm.GetRecordingToolbarDiscardButton(ClientRectangle).Contains(e.Location) ? 1
+        _hoveredButton = RecordingForm.GetRecordingToolbarPauseButton(ClientRectangle).Contains(e.Location) ? 0
+            : RecordingForm.GetRecordingToolbarStopButton(ClientRectangle).Contains(e.Location) ? 1
+            : RecordingForm.GetRecordingToolbarDiscardButton(ClientRectangle).Contains(e.Location) ? 2
             : -1;
         Cursor = _hoveredButton >= 0 ? Cursors.Hand : Cursors.Default;
         if (_hoveredButton != previous)
@@ -132,7 +133,9 @@ internal sealed class RecordingToolbarForm : Form
         if (e.Button != MouseButtons.Left)
             return;
 
-        if (RecordingForm.GetRecordingToolbarStopButton(ClientRectangle).Contains(e.Location))
+        if (RecordingForm.GetRecordingToolbarPauseButton(ClientRectangle).Contains(e.Location))
+            _owner.RequestToolbarTogglePause();
+        else if (RecordingForm.GetRecordingToolbarStopButton(ClientRectangle).Contains(e.Location))
             _owner.RequestToolbarStop();
         else if (RecordingForm.GetRecordingToolbarDiscardButton(ClientRectangle).Contains(e.Location))
             _owner.RequestToolbarDiscard();

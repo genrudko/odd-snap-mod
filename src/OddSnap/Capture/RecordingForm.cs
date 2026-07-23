@@ -346,24 +346,28 @@ public sealed partial class RecordingForm : Form
         WindowsDockRenderer.PaintSurface(g, bounds);
 
         var elapsed = _recorder?.Elapsed ?? _videoRecorder?.Elapsed ?? TimeSpan.Zero;
+        bool paused = IsRecordingPaused;
 
         float dotX = bounds.X + 16;
         float dotY = bounds.Y + bounds.Height / 2f - 5;
-        bool dotVisible = (int)(elapsed.TotalMilliseconds / 500) % 2 == 0;
+        bool dotVisible = paused || (int)(elapsed.TotalMilliseconds / 500) % 2 == 0;
         if (dotVisible)
             g.FillEllipse(_dotBrush, dotX, dotY, 10, 10);
         g.DrawEllipse(_ringPen, dotX, dotY, 10, 10);
 
         string time = $"{(int)elapsed.TotalMinutes:D2}:{elapsed.Seconds:D2}";
+        var pauseButton = GetRecordingToolbarPauseButton(bounds);
         var stopButton = GetRecordingToolbarStopButton(bounds);
         var discardButton = GetRecordingToolbarDiscardButton(bounds);
-        var timeRect = new RectangleF(dotX + 18, bounds.Y, stopButton.X - (dotX + 24), bounds.Height);
+        var timeRect = new RectangleF(dotX + 18, bounds.Y, pauseButton.X - (dotX + 24), bounds.Height);
         using (var timeFormat = new StringFormat { LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap })
             g.DrawString(time, _timeFont, _timeBrush, timeRect, timeFormat);
 
-        DrawIconBtn(g, stopButton, "stopSquare", hoveredButton == 0,
+        DrawIconBtn(g, pauseButton, paused ? "_recordResume" : "_recordPause", hoveredButton == 0,
+            UiChrome.SurfaceTextPrimary, active: paused);
+        DrawIconBtn(g, stopButton, "stopSquare", hoveredButton == 1,
             UiChrome.SurfaceTextPrimary, active: false);
-        DrawIconBtn(g, discardButton, "close", hoveredButton == 1,
+        DrawIconBtn(g, discardButton, "close", hoveredButton == 2,
             UiChrome.SurfaceTextPrimary, active: false);
     }
 
@@ -379,6 +383,35 @@ public sealed partial class RecordingForm : Form
         var discardButton = GetRecordingToolbarDiscardButton(toolbarBounds);
         return new Rectangle(discardButton.X - WindowsDockRenderer.ButtonSpacing - WindowsDockRenderer.IconButtonSize,
             discardButton.Y, WindowsDockRenderer.IconButtonSize, WindowsDockRenderer.IconButtonSize);
+    }
+
+    internal static Rectangle GetRecordingToolbarPauseButton(Rectangle toolbarBounds)
+    {
+        var stopButton = GetRecordingToolbarStopButton(toolbarBounds);
+        return new Rectangle(stopButton.X - WindowsDockRenderer.ButtonSpacing - WindowsDockRenderer.IconButtonSize,
+            stopButton.Y, WindowsDockRenderer.IconButtonSize, WindowsDockRenderer.IconButtonSize);
+    }
+
+    internal bool IsRecordingPaused =>
+        _recorder?.IsPaused == true || _videoRecorder?.IsPaused == true;
+
+    internal void RequestToolbarTogglePause()
+    {
+        if (_state != State.Recording)
+            return;
+
+        if (IsRecordingPaused)
+        {
+            _recorder?.Resume();
+            _videoRecorder?.Resume();
+        }
+        else
+        {
+            _recorder?.Pause();
+            _videoRecorder?.Pause();
+        }
+
+        _recordingToolbarForm?.UpdateSurface();
     }
 
     internal void RequestToolbarStop() => StopRecording();
