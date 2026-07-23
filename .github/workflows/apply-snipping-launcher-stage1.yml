@@ -1,0 +1,41 @@
+name: Apply snipping launcher stage 1
+
+on:
+  push:
+    branches:
+      - feature/snipping-launcher
+    paths:
+      - tools/apply_snipping_launcher_stage1.py
+      - tools/snipping_launcher_patch/**
+      - .github/workflows/apply-snipping-launcher-stage1.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/snipping-launcher
+          fetch-depth: 0
+
+      - name: Apply source patch
+        run: python tools/apply_snipping_launcher_stage1.py
+
+      - name: Commit generated source changes
+        shell: pwsh
+        run: |
+          if (-not (git status --porcelain)) {
+            Write-Host "No source changes to commit."
+            exit 0
+          }
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/mod-build.yml docs/snipping-launcher-stage1.md src/OddSnap
+          git commit -m "feat: add Snipping Tool-style capture launcher"
+          git push origin HEAD:feature/snipping-launcher
