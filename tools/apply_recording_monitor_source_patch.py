@@ -82,6 +82,13 @@ def main() -> None:
         "        if (_format == Models.RecordingFormat.GIF)\n",
     )
 
+    window_selector = ROOT / "src/OddSnap/Capture/RecordingWindowTargetSelector.cs"
+    changed |= replace_once(
+        window_selector,
+        "            nint.Size == 8 ? GetWindowLongPtr64(window, index) : GetWindowLong32(window, index);\n",
+        "            IntPtr.Size == 8 ? GetWindowLongPtr64(window, index) : GetWindowLong32(window, index);\n",
+    )
+
     if changed:
         print("Recording target source patch applied.")
     else:
