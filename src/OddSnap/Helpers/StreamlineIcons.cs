@@ -63,6 +63,7 @@ public static class StreamlineIcons
 
     private static Bitmap? GetCachedGdiBitmap(string id, DrawingColor color, int size, bool active)
     {
+        id = NormalizeIconId(id);
         var key = $"{id}|{active}|{color.ToArgb()}|{size}";
         if (GdiBitmapCache.TryGetValue(key, out var cached))
             return cached;
@@ -90,10 +91,11 @@ public static class StreamlineIcons
         return GdiBitmapCache.TryGetValue(key, out var winner) ? winner : null;
     }
 
-    public static bool HasIcon(string id) => FluentIconData.Icons.ContainsKey(id);
+    public static bool HasIcon(string id) => FluentIconData.Icons.ContainsKey(NormalizeIconId(id));
 
     public static void DrawIcon(DrawingGraphics g, string id, RectangleF bounds, DrawingColor color, float iconInset = 7f, bool active = false)
     {
+        id = NormalizeIconId(id);
         int width = Math.Max(1, (int)Math.Ceiling(bounds.Width - iconInset * 2f));
         int height = Math.Max(1, (int)Math.Ceiling(bounds.Height - iconInset * 2f));
         int size = Math.Max(width, height);
@@ -112,18 +114,18 @@ public static class StreamlineIcons
 
     public static BitmapSource? RenderWpf(string id, DrawingColor color, int size, bool active = false)
     {
-        // The monitor-recording toolbar action is semantic rather than a standalone
-        // Fluent icon ID. Reuse the proven fullscreen monitor-shaped icon instead of
-        // falling through to an invisible/missing icon in the toolbar.
-        if (string.Equals(id, "_recordMonitor", StringComparison.Ordinal))
-            id = "fullscreen";
-
+        id = NormalizeIconId(id);
         var key = $"{id}|{active}|{color.ToArgb()}|{size}";
         if (WpfCache.Count >= WpfCacheLimit && !WpfCache.ContainsKey(key))
             WpfCache.Clear();
 
         return WpfCache.GetOrAdd(key, _ => RenderWpfUncached(id, color, size, active));
     }
+
+    private static string NormalizeIconId(string id) =>
+        string.Equals(id, "_recordMonitor", StringComparison.Ordinal)
+            ? "fullscreen"
+            : id;
 
     private static BitmapSource? RenderWpfUncached(string id, DrawingColor color, int size, bool active)
     {
