@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
@@ -170,9 +169,6 @@ public static class RecordingWindowTargetSelector
 
         private WindowCandidate? FindCandidate(Point screenPoint)
         {
-            // EnumWindows returns top-level windows in Z order, topmost first.
-            // The first candidate containing the pointer is therefore the visible
-            // window the user expects to select, without querying through our overlay.
             return _windows.FirstOrDefault(candidate => candidate.Bounds.Contains(screenPoint));
         }
 
@@ -242,7 +238,7 @@ public static class RecordingWindowTargetSelector
         }
     }
 
-    private sealed record WindowCandidate(nint Handle, Rectangle Bounds, string Title);
+    internal sealed record WindowCandidate(nint Handle, Rectangle Bounds, string Title);
 
     private sealed class PerMonitorDpiScope : IDisposable
     {
@@ -298,7 +294,7 @@ public static class RecordingWindowTargetSelector
                 if ((exStyle & WsExToolWindow) != 0)
                     return true;
 
-                if (DwmGetWindowAttribute(window, DwmwaCloaked, out uint cloaked, sizeof(uint)) == 0 && cloaked != 0)
+                if (DwmGetWindowAttributeUInt(window, DwmwaCloaked, out uint cloaked, sizeof(uint)) == 0 && cloaked != 0)
                     return true;
 
                 int titleLength = GetWindowTextLength(window);
@@ -327,7 +323,7 @@ public static class RecordingWindowTargetSelector
 
         private static bool TryGetExtendedFrameBounds(nint window, out Rectangle bounds)
         {
-            if (DwmGetWindowAttribute(window, DwmwaExtendedFrameBounds, out Rect rect, Marshal.SizeOf<Rect>()) != 0)
+            if (DwmGetWindowAttributeRect(window, DwmwaExtendedFrameBounds, out Rect rect, Marshal.SizeOf<Rect>()) != 0)
             {
                 if (!GetWindowRect(window, out rect))
                 {
@@ -390,10 +386,10 @@ public static class RecordingWindowTargetSelector
         [DllImport("user32.dll")]
         internal static extern nint SetThreadDpiAwarenessContext(nint dpiContext);
 
-        [DllImport("dwmapi.dll")]
-        private static extern int DwmGetWindowAttribute(nint window, uint attribute, out Rect value, int valueSize);
+        [DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute")]
+        private static extern int DwmGetWindowAttributeRect(nint window, uint attribute, out Rect value, int valueSize);
 
-        [DllImport("dwmapi.dll")]
-        private static extern int DwmGetWindowAttribute(nint window, uint attribute, out uint value, int valueSize);
+        [DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute")]
+        private static extern int DwmGetWindowAttributeUInt(nint window, uint attribute, out uint value, int valueSize);
     }
 }
