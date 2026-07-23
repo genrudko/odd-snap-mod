@@ -26,6 +26,7 @@ jobs:
         run: |
           python tools/apply_snipping_launcher_stage1.py
           python tools/apply_snipping_launcher_repair1.py
+          python tools/apply_snipping_launcher_repair2.py
 
       - name: Exclude workflow-only validation change
         shell: pwsh
