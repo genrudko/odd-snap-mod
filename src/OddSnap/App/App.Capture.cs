@@ -777,10 +777,15 @@ public partial class App
                 }
                 break;
             case "_recordMonitor":
-                LaunchGifRecording(
-                    RecordingCaptureTargetSelector.GetMonitorTargetAt(System.Windows.Forms.Cursor.Position),
-                    openResultWindow);
+            {
+                var monitorTarget = RecordingCaptureTargetSelector.SelectMonitorAt(
+                    System.Windows.Forms.Cursor.Position);
+                if (monitorTarget is not null)
+                    LaunchGifRecording(monitorTarget, openResultWindow);
+                else
+                    ResetCapturing();
                 break;
+            }
             case "_recordWindow":
             {
                 var windowTarget = RecordingWindowTargetSelector.SelectWindowAt(System.Windows.Forms.Cursor.Position);
