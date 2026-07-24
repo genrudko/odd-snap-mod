@@ -516,6 +516,14 @@ public sealed partial class RegionOverlayForm
 
     private void HideToolbarForCaptureTool()
     {
+        // The recording launcher must keep its command bar visible while the user
+        // draws the region. Hiding a separate layered ToolbarForm and trying to
+        // resurrect it on MouseUp proved unreliable on real multi-monitor systems.
+        // Keeping it alive also matches the Windows Snipping Tool interaction model:
+        // the bar remains available and simply gains the Start action afterwards.
+        if (IsSnippingLauncher && _snippingLauncherMode == SnippingLauncherMode.Recording)
+            return;
+
         if (ToolDef.IsCaptureTool(_mode))
             HideToolbarImmediately();
     }
