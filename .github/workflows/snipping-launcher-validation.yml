@@ -30,12 +30,14 @@ jobs:
           python tools/apply_snipping_overlay_close_handoff_repair6.py
           python tools/apply_snipping_toolbar_restore_repair7.py
           python tools/apply_snipping_toolbar_persistent_repair8.py
+          python tools/apply_snipping_recording_targets_repair9.py
 
       - name: Verify generated diff
         shell: bash
         run: |
           git diff --check
           git diff -- \
+            src/OddSnap/Capture/RegionOverlayForm.cs \
             src/OddSnap/Capture/RegionOverlayForm.Input.Tools.cs \
             src/OddSnap/Capture/RegionOverlayForm.Input.Helpers.cs \
             src/OddSnap/Capture/RegionOverlayForm.Lifecycle.cs \
@@ -43,7 +45,8 @@ jobs:
             src/OddSnap/Capture/RecordingForm.cs \
             src/OddSnap/Capture/RecordingForm.Targets.cs \
             src/OddSnap.Tests/SnippingRecordingStartTests.cs \
-            src/OddSnap.Tests/SnippingRecordingToolbarPersistenceTests.cs
+            src/OddSnap.Tests/SnippingRecordingToolbarPersistenceTests.cs \
+            src/OddSnap.Tests/SnippingRecordingTargetToolbarTests.cs
 
       - name: Setup .NET 9
         uses: actions/setup-dotnet@v4
@@ -71,6 +74,7 @@ jobs:
         shell: bash
         run: |
           if git diff --quiet -- \
+            src/OddSnap/Capture/RegionOverlayForm.cs \
             src/OddSnap/Capture/RegionOverlayForm.Input.Tools.cs \
             src/OddSnap/Capture/RegionOverlayForm.Input.Helpers.cs \
             src/OddSnap/Capture/RegionOverlayForm.Lifecycle.cs \
@@ -78,12 +82,14 @@ jobs:
             src/OddSnap/Capture/RecordingForm.cs \
             src/OddSnap/Capture/RecordingForm.Targets.cs \
             src/OddSnap.Tests/SnippingRecordingStartTests.cs \
-            src/OddSnap.Tests/SnippingRecordingToolbarPersistenceTests.cs; then
+            src/OddSnap.Tests/SnippingRecordingToolbarPersistenceTests.cs \
+            src/OddSnap.Tests/SnippingRecordingTargetToolbarTests.cs; then
             echo "No generated source changes to commit."
           else
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add \
+              src/OddSnap/Capture/RegionOverlayForm.cs \
               src/OddSnap/Capture/RegionOverlayForm.Input.Tools.cs \
               src/OddSnap/Capture/RegionOverlayForm.Input.Helpers.cs \
               src/OddSnap/Capture/RegionOverlayForm.Lifecycle.cs \
@@ -91,8 +97,9 @@ jobs:
               src/OddSnap/Capture/RecordingForm.cs \
               src/OddSnap/Capture/RecordingForm.Targets.cs \
               src/OddSnap.Tests/SnippingRecordingStartTests.cs \
-              src/OddSnap.Tests/SnippingRecordingToolbarPersistenceTests.cs
-            git commit -m "fix: keep recording launcher toolbar visible during selection"
+              src/OddSnap.Tests/SnippingRecordingToolbarPersistenceTests.cs \
+              src/OddSnap.Tests/SnippingRecordingTargetToolbarTests.cs
+            git commit -m "feat: add recording window and monitor selection"
             git push origin HEAD:feature/snipping-launcher
           fi
 
