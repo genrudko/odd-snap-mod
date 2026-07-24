@@ -53,6 +53,8 @@ public sealed partial class RecordingForm : Form
     private readonly bool _recordDesktop;
     private readonly string? _desktopDeviceId;
     private readonly bool _showMagnifier;
+    private readonly bool _fadeRecordingToolbarWhenIdle;
+    private readonly int _recordingToolbarIdleOpacityPercent;
     private readonly CaptureMagnifierHelper? _magHelper;
     private LiveSelectionAdornerForm? _selectionAdorner;
     private CaptureEscapeKeyHook? _escapeHook;
@@ -87,7 +89,9 @@ public sealed partial class RecordingForm : Form
                          bool showCursor = false,
                          bool recordMic = false, string? micDeviceId = null,
                          bool recordDesktop = false, string? desktopDeviceId = null,
-                         bool showMagnifier = false)
+                         bool showMagnifier = false,
+                          bool fadeRecordingToolbarWhenIdle = true,
+                          int recordingToolbarIdleOpacityPercent = 55)
     {
         OddSnap.UI.Theme.Refresh();
         _screenshot = screenshot;
@@ -103,6 +107,8 @@ public sealed partial class RecordingForm : Form
         _recordDesktop = recordDesktop;
         _desktopDeviceId = desktopDeviceId;
         _showMagnifier = showMagnifier;
+        _fadeRecordingToolbarWhenIdle = fadeRecordingToolbarWhenIdle;
+        _recordingToolbarIdleOpacityPercent = Math.Clamp(recordingToolbarIdleOpacityPercent, 20, 100);
         if (_showMagnifier && screenshot is not null)
         {
             _magHelper = new CaptureMagnifierHelper();
@@ -125,6 +131,10 @@ public sealed partial class RecordingForm : Form
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint |
                  ControlStyles.OptimizedDoubleBuffer | ControlStyles.Opaque, true);
     }
+
+    internal bool FadeRecordingToolbarWhenIdle => _fadeRecordingToolbarWhenIdle;
+
+    internal int RecordingToolbarIdleOpacityPercent => _recordingToolbarIdleOpacityPercent;
 
     protected override CreateParams CreateParams
     {

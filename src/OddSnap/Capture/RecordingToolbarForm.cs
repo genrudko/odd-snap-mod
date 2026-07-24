@@ -8,7 +8,6 @@ namespace OddSnap.Capture;
 internal sealed class RecordingToolbarForm : Form
 {
     private const byte ActiveAlpha = 255;
-    private const byte IdleAlpha = 140;
     private static readonly TimeSpan IdleDelay = TimeSpan.FromMilliseconds(850);
 
     private readonly RecordingForm _owner;
@@ -284,6 +283,17 @@ internal sealed class RecordingToolbarForm : Form
         UpdateSurface();
     }
 
+    internal static byte ResolveIdleAlpha(bool fadeWhenIdle, int opacityPercent)
+    {
+        if (!fadeWhenIdle)
+            return ActiveAlpha;
+
+        int clampedPercent = Math.Clamp(opacityPercent, 20, 100);
+        return (byte)Math.Round(
+            ActiveAlpha * (clampedPercent / 100d),
+            MidpointRounding.AwayFromZero);
+    }
+
     private void UpdateIdleOpacity()
     {
         if (IsDisposed || !IsHandleCreated || !Visible)
@@ -291,7 +301,9 @@ internal sealed class RecordingToolbarForm : Form
 
         byte target = _pointerInside || _dragging || DateTime.UtcNow - _lastInteractionUtc < IdleDelay
             ? ActiveAlpha
-            : IdleAlpha;
+            : ResolveIdleAlpha(
+                _owner.FadeRecordingToolbarWhenIdle,
+                _owner.RecordingToolbarIdleOpacityPercent);
         if (_surfaceAlpha == target)
             return;
 
