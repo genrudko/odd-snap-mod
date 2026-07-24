@@ -22,7 +22,10 @@ This stage adds a Windows Snipping Tool-style launch flow on top of the existing
 2. Drag a rectangular region.
 3. Press **Start recording** in the top launcher bar.
 4. OddSnap starts the existing region recorder with pause, resume, stop, and discard controls.
-5. After encoding, OddSnap immediately opens the result window with playback controls.
+5. The recording controls can be dragged by any non-button area and remain inside the active monitor working area.
+6. After a short idle delay the controls fade to a translucent state; moving the pointer over them restores full opacity.
+7. A manually chosen toolbar position is preserved when a tracked window moves and is transferred to the equivalent position when the target changes monitors.
+8. After encoding, OddSnap immediately opens the result window with playback controls.
 
 ## Suggested PowerToys mapping
 
@@ -40,8 +43,11 @@ OddSnap remains responsible for the capture workflow; PowerToys only translates 
 2. Remap `Win + Shift + R` through PowerToys to the configured recording hotkey and confirm the recording launcher opens.
 3. Switch screenshot/recording modes in-place and verify stale selections are cleared.
 4. Verify rectangle, freeform, window, and fullscreen screenshots open in the result window.
-5. Verify a recording does not start on mouse release; it starts only after pressing the Start button.
-6. Verify pause/resume and audio behavior remain correct.
-7. Verify MP4, WebM, MKV, and GIF results open correctly.
-8. Verify `Esc` cancels both launcher modes.
-9. Verify mixed-DPI and multi-monitor placement.
+5. Verify a recording does not start on mouse release; the Start recording button must appear after a valid region is selected.
+6. Drag the recording controls from the timer area and verify that pause, stop, and discard still work.
+7. Leave the pointer away from the controls and verify that they fade; hover them and verify that full opacity returns.
+8. Move a tracked recording window between monitors and verify that a manually positioned toolbar remains inside the destination monitor.
+9. Verify pause/resume and audio behavior remain correct.
+10. Verify MP4, WebM, MKV, and GIF results open correctly.
+11. Verify `Esc` cancels both launcher modes.
+12. Verify mixed-DPI and multi-monitor placement.
