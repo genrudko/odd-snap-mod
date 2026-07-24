@@ -23,7 +23,9 @@ jobs:
           fetch-depth: 0
 
       - name: Apply recording toolbar opacity settings
-        run: python tools/apply_recording_toolbar_opacity_settings_repair10.py
+        run: |
+          python tools/apply_recording_toolbar_opacity_constructor_prepatch.py
+          python tools/apply_recording_toolbar_opacity_settings_repair10.py
 
       - name: Verify generated diff
         shell: bash
