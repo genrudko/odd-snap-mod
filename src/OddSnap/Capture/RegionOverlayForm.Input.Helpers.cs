@@ -144,7 +144,7 @@ public sealed partial class RegionOverlayForm
         CancelActivePointerInteraction();
         _snippingLauncherMode = mode;
         _mode = CaptureMode.Rectangle;
-        _activeToolId = "rect";
+        _activeToolId = mode == SnippingLauncherMode.Recording ? "_snipArea" : "rect";
         _hasSelection = false;
         _hasDragged = false;
         _selectionRect = Rectangle.Empty;

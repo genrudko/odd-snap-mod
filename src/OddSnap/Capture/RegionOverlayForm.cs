@@ -397,7 +397,9 @@ public sealed partial class RegionOverlayForm : Form
         _bmpW = _screenshot.Width;
         _bmpH = _screenshot.Height;
         _mode = snippingLauncherMode.HasValue ? CaptureMode.Rectangle : initialMode;
-        _activeToolId = ToolDef.AllTools.FirstOrDefault(t => t.Mode == _mode)?.Id;
+        _activeToolId = snippingLauncherMode == SnippingLauncherMode.Recording
+            ? "_snipArea"
+            : ToolDef.AllTools.FirstOrDefault(t => t.Mode == _mode)?.Id;
         _showTime = DateTime.UtcNow;
 
         // Magnifier bitmap for color picker
@@ -613,8 +615,18 @@ public sealed partial class RegionOverlayForm : Form
         var screenshotToggle = new ToolDef("_snipScreenshot", "Screenshot", '\0', null, -1);
         var recordingToggle = new ToolDef("_snipRecording", "Screen recording", '\0', null, -1);
         var rectangle = ToolDef.AllTools.First(t => t.Id == "rect");
+        var recordArea = new ToolDef("_snipArea", "Record area", '\0', CaptureMode.Rectangle, -1);
+        var recordWindow = ToolDef.ToolbarActions.First(t => t.Id == "_recordWindow");
+        var recordMonitor = ToolDef.ToolbarActions.First(t => t.Id == "_recordMonitor");
 
-        var recordingTools = new List<ToolDef> { screenshotToggle, recordingToggle, rectangle };
+        var recordingTools = new List<ToolDef>
+        {
+            screenshotToggle,
+            recordingToggle,
+            recordArea,
+            recordWindow,
+            recordMonitor
+        };
         if (_hasSelection && _selectionRect.Width > 2 && _selectionRect.Height > 2)
             recordingTools.Add(new ToolDef("_snipStart", "Start recording", '\0', null, -1));
 
@@ -755,6 +767,7 @@ public sealed partial class RegionOverlayForm : Form
     {
         "_snipScreenshot" => "camera",
         "_snipRecording" => "record",
+        "_snipArea" => "_record",
         "_snipStart" => "_recordResume",
         "_fullscreen" => "fullscreen",
         "_activeWindow" => "activeWindow",

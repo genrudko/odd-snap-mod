@@ -417,6 +417,8 @@ public partial class App
         Bitmap? screenshot = null;
         bool captureFlowHandedOff = false;
         RecordingCaptureTarget? pendingRecordingTarget = null;
+        string? pendingToolbarActionId = null;
+        bool pendingToolbarActionOpenResult = false;
         try
         {
             var screenshotStarted = PerformanceTrace.Timestamp();
@@ -674,17 +676,13 @@ public partial class App
 
             overlay.ToolbarActionRequested += actionId =>
             {
+                // Window and monitor pickers are also topmost surfaces. Defer opening
+                // them until this launcher and its layered toolbar have fully closed.
+                captureFlowHandedOff = true;
+                pendingToolbarActionId = actionId;
+                pendingToolbarActionOpenResult = snippingLauncherMode.HasValue;
                 overlay.Hide();
                 overlay.Close();
-                if (!TryPostToAppDispatcher(
-                        () => LaunchToolbarActionFromOverlay(
-                            actionId,
-                            openResultWindow: snippingLauncherMode == SnippingLauncherMode.Screenshot),
-                        DispatcherPriority.Background,
-                        "capture.toolbar-action-post"))
-                {
-                    ResetCapturingWithoutUiRestore();
-                }
             };
 
             overlay.FormClosed += (_, _) =>
@@ -697,6 +695,20 @@ public partial class App
                 if (pendingRecordingTarget is not null)
                 {
                     LaunchGifRecording(pendingRecordingTarget, openResultWindow: true);
+                    return;
+                }
+
+                if (pendingToolbarActionId is not null)
+                {
+                    string actionId = pendingToolbarActionId;
+                    bool openResultWindow = pendingToolbarActionOpenResult;
+                    if (!TryPostToAppDispatcher(
+                            () => LaunchToolbarActionFromOverlay(actionId, openResultWindow),
+                            DispatcherPriority.Background,
+                            "capture.toolbar-action-after-close-post"))
+                    {
+                        ResetCapturingWithoutUiRestore();
+                    }
                     return;
                 }
 
@@ -765,13 +777,15 @@ public partial class App
                 }
                 break;
             case "_recordMonitor":
-                LaunchGifRecording(RecordingCaptureTargetSelector.GetMonitorTargetAt(System.Windows.Forms.Cursor.Position));
+                LaunchGifRecording(
+                    RecordingCaptureTargetSelector.GetMonitorTargetAt(System.Windows.Forms.Cursor.Position),
+                    openResultWindow);
                 break;
             case "_recordWindow":
             {
                 var windowTarget = RecordingWindowTargetSelector.SelectWindowAt(System.Windows.Forms.Cursor.Position);
                 if (windowTarget is not null)
-                    LaunchGifRecording(windowTarget);
+                    LaunchGifRecording(windowTarget, openResultWindow);
                 else
                     ResetCapturing();
                 break;
