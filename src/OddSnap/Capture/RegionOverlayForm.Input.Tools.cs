@@ -710,18 +710,16 @@ public sealed partial class RegionOverlayForm
                     _autoDetectActive = false;
                     _hasSelection = true;
                     CalcToolbar();
-                    PositionToolbarForm();
-                    RefreshToolbar();
-                    UpdateToolbarSurfaceOnly();
+                    // Mouse-down hides the separate layered toolbar while the user drags.
+                    // Recreate/show it after mouse-up so the newly-added Start button is usable.
+                    EnsureToolbarReady();
                     Invalidate(InflateForRepaint(_selectionRect, 12));
                 }
                 else if (isRecordingLauncher)
                 {
                     _hasSelection = false;
                     CalcToolbar();
-                    PositionToolbarForm();
-                    RefreshToolbar();
-                    UpdateToolbarSurfaceOnly();
+                    EnsureToolbarReady();
                     Invalidate();
                 }
                 else if (isCenter && _selectionRect.Width > 2 && _selectionRect.Height > 2)
