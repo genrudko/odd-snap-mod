@@ -25,6 +25,7 @@ public sealed class SnippingRecordingToolbarPersistenceTests
 
         var thread = new Thread(() =>
         {
+            System.Windows.Forms.Timer? readinessTimer = null;
             try
             {
                 var bounds = new Rectangle(0, 0, 900, 650);
@@ -37,22 +38,39 @@ public sealed class SnippingRecordingToolbarPersistenceTests
                     CenterSelectionAspectRatio.Free,
                     SnippingLauncherMode.Recording);
 
-                form.Shown += (_, _) => form.BeginInvoke(new Action(() =>
+                form.Shown += (_, _) =>
                 {
-                    var toolbar = GetToolbar(form);
-                    visibleBeforeDrag = toolbar?.Visible == true;
+                    var deadline = DateTime.UtcNow.AddSeconds(5);
+                    readinessTimer = new System.Windows.Forms.Timer { Interval = 25 };
+                    readinessTimer.Tick += (_, _) =>
+                    {
+                        var toolbar = GetToolbar(form);
+                        if (toolbar?.Visible != true)
+                        {
+                            if (DateTime.UtcNow >= deadline)
+                            {
+                                readinessTimer.Stop();
+                                form.Close();
+                            }
+                            return;
+                        }
 
-                    InvokeMouse(form, "OnMouseDown", MouseButtons.Left, 140, 180);
-                    visibleDuringDrag = toolbar?.Visible == true;
+                        readinessTimer.Stop();
+                        visibleBeforeDrag = true;
 
-                    InvokeMouse(form, "OnMouseMove", MouseButtons.Left, 560, 410);
-                    InvokeMouse(form, "OnMouseUp", MouseButtons.Left, 560, 410);
+                        InvokeMouse(form, "OnMouseDown", MouseButtons.Left, 140, 180);
+                        visibleDuringDrag = toolbar.Visible;
 
-                    toolbar = GetToolbar(form);
-                    visibleAfterDrag = toolbar?.Visible == true;
-                    hasStartAction = GetTools(form).Any(tool => tool.Id == "_snipStart");
-                    form.Close();
-                }));
+                        InvokeMouse(form, "OnMouseMove", MouseButtons.Left, 560, 410);
+                        InvokeMouse(form, "OnMouseUp", MouseButtons.Left, 560, 410);
+
+                        toolbar = GetToolbar(form);
+                        visibleAfterDrag = toolbar?.Visible == true;
+                        hasStartAction = GetTools(form).Any(tool => tool.Id == "_snipStart");
+                        form.Close();
+                    };
+                    readinessTimer.Start();
+                };
 
                 form.FormClosed += (_, _) => finished.Set();
                 Application.Run(form);
@@ -61,6 +79,11 @@ public sealed class SnippingRecordingToolbarPersistenceTests
             {
                 failure = ex;
                 finished.Set();
+            }
+            finally
+            {
+                readinessTimer?.Stop();
+                readinessTimer?.Dispose();
             }
         })
         {
