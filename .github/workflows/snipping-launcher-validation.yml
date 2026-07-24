@@ -27,6 +27,7 @@ jobs:
           python tools/apply_snipping_launcher_repair3.py
           python tools/apply_snipping_start_handoff_repair4.py
           python tools/apply_preselected_recording_start_repair5.py
+          python tools/apply_snipping_overlay_close_handoff_repair6.py
 
       - name: Verify generated diff
         shell: bash
@@ -34,9 +35,11 @@ jobs:
           git diff --check
           git diff -- \
             src/OddSnap/Capture/RegionOverlayForm.Input.Tools.cs \
+            src/OddSnap/Capture/RegionOverlayForm.Input.Helpers.cs \
             src/OddSnap/App/App.Capture.cs \
             src/OddSnap/Capture/RecordingForm.cs \
-            src/OddSnap/Capture/RecordingForm.Targets.cs
+            src/OddSnap/Capture/RecordingForm.Targets.cs \
+            src/OddSnap.Tests/SnippingRecordingStartTests.cs
 
       - name: Setup .NET 9
         uses: actions/setup-dotnet@v4
@@ -65,19 +68,23 @@ jobs:
         run: |
           if git diff --quiet -- \
             src/OddSnap/Capture/RegionOverlayForm.Input.Tools.cs \
+            src/OddSnap/Capture/RegionOverlayForm.Input.Helpers.cs \
             src/OddSnap/App/App.Capture.cs \
             src/OddSnap/Capture/RecordingForm.cs \
-            src/OddSnap/Capture/RecordingForm.Targets.cs; then
+            src/OddSnap/Capture/RecordingForm.Targets.cs \
+            src/OddSnap.Tests/SnippingRecordingStartTests.cs; then
             echo "No generated source changes to commit."
           else
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add \
               src/OddSnap/Capture/RegionOverlayForm.Input.Tools.cs \
+              src/OddSnap/Capture/RegionOverlayForm.Input.Helpers.cs \
               src/OddSnap/App/App.Capture.cs \
               src/OddSnap/Capture/RecordingForm.cs \
-              src/OddSnap/Capture/RecordingForm.Targets.cs
-            git commit -m "fix: start preselected snipping recording deterministically"
+              src/OddSnap/Capture/RecordingForm.Targets.cs \
+              src/OddSnap.Tests/SnippingRecordingStartTests.cs
+            git commit -m "fix: close snipping overlay before recording starts"
             git push origin HEAD:feature/snipping-launcher
           fi
 
