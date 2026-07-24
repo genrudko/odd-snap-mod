@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -8,170 +9,70 @@ RECORDING_FORM = ROOT / "src/OddSnap/Capture/RecordingForm.cs"
 RECORDING_TOOLBAR = ROOT / "src/OddSnap/Capture/RecordingToolbarForm.cs"
 APP_CAPTURE = ROOT / "src/OddSnap/App/App.Capture.cs"
 SETTINGS_XAML = ROOT / "src/OddSnap/UI/SettingsWindow.xaml"
-SETTINGS_OPACITY_CODE = ROOT / "src/OddSnap/UI/SettingsWindow.RecordingToolbarOpacity.cs"
-OPACITY_TESTS = ROOT / "src/OddSnap.Tests/RecordingToolbarOpacityTests.cs"
+SETTINGS_CODE = ROOT / "src/OddSnap/UI/SettingsWindow.RecordingToolbarOpacity.cs"
+TESTS = ROOT / "src/OddSnap.Tests/RecordingToolbarOpacityTests.cs"
 
 
-def replace_once(path: Path, old: str, new: str) -> bool:
-    text = path.read_text(encoding="utf-8")
-    if new in text:
+def read(path: Path) -> str:
+    return path.read_text(encoding="utf-8").replace("\r\n", "\n")
+
+
+def write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text.replace("\r\n", "\n"), encoding="utf-8")
+
+
+def insert_after(path: Path, marker: str, addition: str, sentinel: str) -> bool:
+    text = read(path)
+    if sentinel in text:
+        return False
+    index = text.find(marker)
+    if index < 0:
+        raise RuntimeError(f"Marker not found in {path}: {marker!r}")
+    index += len(marker)
+    write(path, text[:index] + addition + text[index:])
+    return True
+
+
+def replace_required(path: Path, old: str, new: str, sentinel: str) -> bool:
+    text = read(path)
+    if sentinel in text:
         return False
     if old not in text:
-        raise RuntimeError(f"Expected fragment was not found in {path}: {old!r}")
-    path.write_text(text.replace(old, new, 1), encoding="utf-8")
+        raise RuntimeError(f"Fragment not found in {path}: {old!r}")
+    write(path, text.replace(old, new, 1))
     return True
 
 
 def write_if_changed(path: Path, content: str) -> bool:
     normalized = content.replace("\r\n", "\n")
-    if path.exists() and path.read_text(encoding="utf-8").replace("\r\n", "\n") == normalized:
+    if path.exists() and read(path) == normalized:
         return False
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(normalized, encoding="utf-8")
+    write(path, normalized)
     return True
 
 
-def main() -> None:
-    changed = False
+def patch_xaml() -> bool:
+    text = read(SETTINGS_XAML)
+    if "FadeRecordingToolbarWhenIdleCheck" in text:
+        return False
 
-    changed |= replace_once(
-        APP_SETTINGS,
-        """    public string? DesktopAudioDeviceId { get; set; }
+    anchor = 'Checked="RecordShowCursorCheck_Changed" Unchecked="RecordShowCursorCheck_Changed"/>'
+    anchor_end = text.find(anchor)
+    if anchor_end < 0:
+        raise RuntimeError("RecordShowCursorCheck anchor not found in SettingsWindow.xaml")
+    anchor_end += len(anchor)
 
-    // Toolbar customization: which tools appear in the dock
-""",
-        """    public string? DesktopAudioDeviceId { get; set; }
-    public bool FadeRecordingToolbarWhenIdle { get; set; } = true;
-    public int RecordingToolbarIdleOpacityPercent { get; set; } = 55;
+    close_match = re.search(r"\n(?P<grid>\s*</Grid>)\n(?P<stack>\s*</StackPanel>)", text[anchor_end:])
+    if close_match is None:
+        raise RuntimeError("Recording settings card closing tags were not found")
 
-    // Toolbar customization: which tools appear in the dock
-""",
-    )
+    close_start = anchor_end + close_match.start()
+    close_end = anchor_end + close_match.end()
+    grid_close = close_match.group("grid")
+    stack_close = close_match.group("stack")
 
-    changed |= replace_once(
-        RECORDING_FORM,
-        """    private readonly bool _showMagnifier;
-    private readonly CaptureMagnifierHelper? _magHelper;
-""",
-        """    private readonly bool _showMagnifier;
-    private readonly bool _fadeRecordingToolbarWhenIdle;
-    private readonly int _recordingToolbarIdleOpacityPercent;
-    private readonly CaptureMagnifierHelper? _magHelper;
-""",
-    )
-
-    changed |= replace_once(
-        RECORDING_FORM,
-        """                          bool recordDesktop = false, string? desktopDeviceId = null,
-                          bool showMagnifier = false)
-""",
-        """                          bool recordDesktop = false, string? desktopDeviceId = null,
-                          bool showMagnifier = false,
-                          bool fadeRecordingToolbarWhenIdle = true,
-                          int recordingToolbarIdleOpacityPercent = 55)
-""",
-    )
-
-    changed |= replace_once(
-        RECORDING_FORM,
-        """        _desktopDeviceId = desktopDeviceId;
-        _showMagnifier = showMagnifier;
-        if (_showMagnifier && screenshot is not null)
-""",
-        """        _desktopDeviceId = desktopDeviceId;
-        _showMagnifier = showMagnifier;
-        _fadeRecordingToolbarWhenIdle = fadeRecordingToolbarWhenIdle;
-        _recordingToolbarIdleOpacityPercent = Math.Clamp(recordingToolbarIdleOpacityPercent, 20, 100);
-        if (_showMagnifier && screenshot is not null)
-""",
-    )
-
-    changed |= replace_once(
-        RECORDING_FORM,
-        """    protected override CreateParams CreateParams
-""",
-        """    internal bool FadeRecordingToolbarWhenIdle => _fadeRecordingToolbarWhenIdle;
-
-    internal int RecordingToolbarIdleOpacityPercent => _recordingToolbarIdleOpacityPercent;
-
-    protected override CreateParams CreateParams
-""",
-    )
-
-    changed |= replace_once(
-        APP_CAPTURE,
-        """                form = new RecordingForm(selectionScreenshot, bounds, fps, savePath, fmt, maxH,
-                    showCursor, recMic, s.MicrophoneDeviceId, recDesktop, s.DesktopAudioDeviceId,
-                    _settingsService!.Settings.ShowCaptureMagnifier);
-""",
-        """                form = new RecordingForm(selectionScreenshot, bounds, fps, savePath, fmt, maxH,
-                    showCursor, recMic, s.MicrophoneDeviceId, recDesktop, s.DesktopAudioDeviceId,
-                    s.ShowCaptureMagnifier,
-                    s.FadeRecordingToolbarWhenIdle,
-                    s.RecordingToolbarIdleOpacityPercent);
-""",
-    )
-
-    changed |= replace_once(
-        RECORDING_TOOLBAR,
-        """    private const byte ActiveAlpha = 255;
-    private const byte IdleAlpha = 140;
-    private static readonly TimeSpan IdleDelay = TimeSpan.FromMilliseconds(850);
-""",
-        """    private const byte ActiveAlpha = 255;
-    private static readonly TimeSpan IdleDelay = TimeSpan.FromMilliseconds(850);
-""",
-    )
-
-    changed |= replace_once(
-        RECORDING_TOOLBAR,
-        """    private void UpdateIdleOpacity()
-    {
-""",
-        """    internal static byte ResolveIdleAlpha(bool fadeWhenIdle, int opacityPercent)
-    {
-        if (!fadeWhenIdle)
-            return ActiveAlpha;
-
-        int clampedPercent = Math.Clamp(opacityPercent, 20, 100);
-        return (byte)Math.Round(
-            ActiveAlpha * (clampedPercent / 100d),
-            MidpointRounding.AwayFromZero);
-    }
-
-    private void UpdateIdleOpacity()
-    {
-""",
-    )
-
-    changed |= replace_once(
-        RECORDING_TOOLBAR,
-        """        byte target = _pointerInside || _dragging || DateTime.UtcNow - _lastInteractionUtc < IdleDelay
-            ? ActiveAlpha
-            : IdleAlpha;
-""",
-        """        byte target = _pointerInside || _dragging || DateTime.UtcNow - _lastInteractionUtc < IdleDelay
-            ? ActiveAlpha
-            : ResolveIdleAlpha(
-                _owner.FadeRecordingToolbarWhenIdle,
-                _owner.RecordingToolbarIdleOpacityPercent);
-""",
-    )
-
-    changed |= replace_once(
-        SETTINGS_XAML,
-        """                                <CheckBox x:Name="RecordShowCursorCheck" Grid.Column="2" Content="" FontSize="13" VerticalAlignment="Center"
-                                          AutomationProperties.Name="Show cursor in recordings"
-                                          ToolTip="Include pointer movement in recorded output."
-                                          Checked="RecordShowCursorCheck_Changed" Unchecked="RecordShowCursorCheck_Changed"/>
-                            </Grid>
-                        </StackPanel>
-""",
-        """                                <CheckBox x:Name="RecordShowCursorCheck" Grid.Column="2" Content="" FontSize="13" VerticalAlignment="Center"
-                                          AutomationProperties.Name="Show cursor in recordings"
-                                          ToolTip="Include pointer movement in recorded output."
-                                          Checked="RecordShowCursorCheck_Changed" Unchecked="RecordShowCursorCheck_Changed"/>
-                            </Grid>
+    rows = """
                             <Border Height="1" Background="{DynamicResource ThemeSeparatorBrush}" Margin="0,9,0,9"/>
                             <Grid Style="{StaticResource SettingRow}"
                                   Loaded="RecordingToolbarOpacitySettings_Loaded">
@@ -209,34 +110,116 @@ def main() -> None:
                                 </StackPanel>
                                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                                     <Slider x:Name="RecordingToolbarIdleOpacitySlider"
-                                            Width="150"
-                                            Minimum="20"
-                                            Maximum="100"
-                                            TickFrequency="5"
-                                            SmallChange="5"
-                                            LargeChange="10"
-                                            IsSnapToTickEnabled="True"
-                                            IsMoveToPointEnabled="True"
+                                            Width="150" Minimum="20" Maximum="100"
+                                            TickFrequency="5" SmallChange="5" LargeChange="10"
+                                            IsSnapToTickEnabled="True" IsMoveToPointEnabled="True"
                                             VerticalAlignment="Center"
                                             AutomationProperties.Name="Idle recording control opacity"
                                             ToolTip="Choose the recording control opacity while idle."
                                             ValueChanged="RecordingToolbarIdleOpacitySlider_ValueChanged"/>
                                     <TextBlock x:Name="RecordingToolbarIdleOpacityValueText"
-                                               Width="48"
-                                               Margin="10,0,0,0"
-                                               VerticalAlignment="Center"
-                                               TextAlignment="Right"
+                                               Width="48" Margin="10,0,0,0"
+                                               VerticalAlignment="Center" TextAlignment="Right"
                                                Foreground="{DynamicResource ThemeTextSecondaryBrush}"
-                                               FontFamily="Segoe UI Variable Text"
-                                               FontSize="12"/>
+                                               FontFamily="Segoe UI Variable Text" FontSize="12"/>
                                 </StackPanel>
-                            </Grid>
-                        </StackPanel>
-""",
+                            </Grid>"""
+
+    replacement = f"\n{grid_close}\n{rows}\n{stack_close}"
+    write(SETTINGS_XAML, text[:close_start] + replacement + text[close_end:])
+    return True
+
+
+def main() -> None:
+    changed = False
+
+    changed |= insert_after(
+        APP_SETTINGS,
+        "    public string? DesktopAudioDeviceId { get; set; }",
+        "\n    public bool FadeRecordingToolbarWhenIdle { get; set; } = true;"
+        "\n    public int RecordingToolbarIdleOpacityPercent { get; set; } = 55;",
+        "FadeRecordingToolbarWhenIdle",
     )
 
+    changed |= insert_after(
+        RECORDING_FORM,
+        "    private readonly bool _showMagnifier;",
+        "\n    private readonly bool _fadeRecordingToolbarWhenIdle;"
+        "\n    private readonly int _recordingToolbarIdleOpacityPercent;",
+        "_fadeRecordingToolbarWhenIdle",
+    )
+
+    changed |= replace_required(
+        RECORDING_FORM,
+        "                          bool showMagnifier = false)",
+        "                          bool showMagnifier = false,\n"
+        "                          bool fadeRecordingToolbarWhenIdle = true,\n"
+        "                          int recordingToolbarIdleOpacityPercent = 55)",
+        "int recordingToolbarIdleOpacityPercent = 55)",
+    )
+
+    changed |= insert_after(
+        RECORDING_FORM,
+        "        _showMagnifier = showMagnifier;",
+        "\n        _fadeRecordingToolbarWhenIdle = fadeRecordingToolbarWhenIdle;"
+        "\n        _recordingToolbarIdleOpacityPercent = Math.Clamp(recordingToolbarIdleOpacityPercent, 20, 100);",
+        "_recordingToolbarIdleOpacityPercent = Math.Clamp",
+    )
+
+    changed |= insert_after(
+        RECORDING_FORM,
+        "    }\n\n    protected override CreateParams CreateParams",
+        "\n\n    internal bool FadeRecordingToolbarWhenIdle => _fadeRecordingToolbarWhenIdle;"
+        "\n\n    internal int RecordingToolbarIdleOpacityPercent => _recordingToolbarIdleOpacityPercent;",
+        "internal bool FadeRecordingToolbarWhenIdle",
+    )
+
+    changed |= replace_required(
+        APP_CAPTURE,
+        "                    _settingsService!.Settings.ShowCaptureMagnifier);",
+        "                    s.ShowCaptureMagnifier,\n"
+        "                    s.FadeRecordingToolbarWhenIdle,\n"
+        "                    s.RecordingToolbarIdleOpacityPercent);",
+        "s.RecordingToolbarIdleOpacityPercent);",
+    )
+
+    toolbar_text = read(RECORDING_TOOLBAR)
+    if "private const byte IdleAlpha = 140;\n" in toolbar_text:
+        toolbar_text = toolbar_text.replace("    private const byte IdleAlpha = 140;\n", "", 1)
+        write(RECORDING_TOOLBAR, toolbar_text)
+        changed = True
+
+    changed |= insert_after(
+        RECORDING_TOOLBAR,
+        "    private void UpdateIdleOpacity()",
+        """    internal static byte ResolveIdleAlpha(bool fadeWhenIdle, int opacityPercent)
+    {
+        if (!fadeWhenIdle)
+            return ActiveAlpha;
+
+        int clampedPercent = Math.Clamp(opacityPercent, 20, 100);
+        return (byte)Math.Round(
+            ActiveAlpha * (clampedPercent / 100d),
+            MidpointRounding.AwayFromZero);
+    }
+
+""",
+        "internal static byte ResolveIdleAlpha",
+    )
+
+    changed |= replace_required(
+        RECORDING_TOOLBAR,
+        "            : IdleAlpha;",
+        "            : ResolveIdleAlpha(\n"
+        "                _owner.FadeRecordingToolbarWhenIdle,\n"
+        "                _owner.RecordingToolbarIdleOpacityPercent);",
+        "_owner.RecordingToolbarIdleOpacityPercent);",
+    )
+
+    changed |= patch_xaml()
+
     changed |= write_if_changed(
-        SETTINGS_OPACITY_CODE,
+        SETTINGS_CODE,
         """using System.Windows;
 using System.Windows.Controls;
 
@@ -246,17 +229,13 @@ public partial class SettingsWindow
 {
     private bool _suppressRecordingToolbarOpacityPreferenceChange;
 
-    private void RecordingToolbarOpacitySettings_Loaded(object sender, RoutedEventArgs e)
-    {
+    private void RecordingToolbarOpacitySettings_Loaded(object sender, RoutedEventArgs e) =>
         LoadRecordingToolbarOpacitySettings();
-    }
 
     private void LoadRecordingToolbarOpacitySettings()
     {
         int opacityPercent = Math.Clamp(
-            _settingsService.Settings.RecordingToolbarIdleOpacityPercent,
-            20,
-            100);
+            _settingsService.Settings.RecordingToolbarIdleOpacityPercent, 20, 100);
         bool fadeWhenIdle = _settingsService.Settings.FadeRecordingToolbarWhenIdle;
 
         _suppressRecordingToolbarOpacityPreferenceChange = true;
@@ -280,7 +259,6 @@ public partial class SettingsWindow
 
         bool previous = _settingsService.Settings.FadeRecordingToolbarWhenIdle;
         bool current = FadeRecordingToolbarWhenIdleCheck.IsChecked == true;
-
         SaveRecordingToolbarOpacityPreference(
             "settings.recording-toolbar-fade",
             "Recording control fade",
@@ -304,7 +282,6 @@ public partial class SettingsWindow
 
         int current = Math.Clamp((int)Math.Round(e.NewValue), 20, 100);
         RecordingToolbarIdleOpacityValueText.Text = $"{current}%";
-
         if (!IsLoaded || _suppressRecordingToolbarOpacityPreferenceChange)
             return;
 
@@ -317,8 +294,9 @@ public partial class SettingsWindow
             value => _settingsService.Settings.RecordingToolbarIdleOpacityPercent = value,
             value =>
             {
-                RecordingToolbarIdleOpacitySlider.Value = Math.Clamp(value, 20, 100);
-                RecordingToolbarIdleOpacityValueText.Text = $"{Math.Clamp(value, 20, 100)}%";
+                int restored = Math.Clamp(value, 20, 100);
+                RecordingToolbarIdleOpacitySlider.Value = restored;
+                RecordingToolbarIdleOpacityValueText.Text = $"{restored}%";
             });
     }
 
@@ -342,24 +320,12 @@ public partial class SettingsWindow
         {
             AppDiagnostics.LogError(diagnosticKey, ex);
             setValue(previous);
-            try
-            {
-                _settingsService.Save();
-            }
-            catch (Exception rollbackEx)
-            {
-                AppDiagnostics.LogError($"{diagnosticKey}-rollback", rollbackEx);
-            }
+            try { _settingsService.Save(); }
+            catch (Exception rollbackEx) { AppDiagnostics.LogError($"{diagnosticKey}-rollback", rollbackEx); }
 
             _suppressRecordingToolbarOpacityPreferenceChange = true;
-            try
-            {
-                restoreUi(previous);
-            }
-            finally
-            {
-                _suppressRecordingToolbarOpacityPreferenceChange = false;
-            }
+            try { restoreUi(previous); }
+            finally { _suppressRecordingToolbarOpacityPreferenceChange = false; }
 
             SetRecordingToolbarOpacityStatus($"{label} change was not saved. Previous setting restored.");
             ToastWindow.ShowError(
@@ -380,7 +346,7 @@ public partial class SettingsWindow
     )
 
     changed |= write_if_changed(
-        OPACITY_TESTS,
+        TESTS,
         """using OddSnap.Capture;
 using OddSnap.Models;
 using Xunit;
@@ -393,7 +359,6 @@ public sealed class RecordingToolbarOpacityTests
     public void AppSettingsUseReadableIdleToolbarDefaults()
     {
         var settings = new AppSettings();
-
         Assert.True(settings.FadeRecordingToolbarWhenIdle);
         Assert.Equal(55, settings.RecordingToolbarIdleOpacityPercent);
     }
@@ -406,9 +371,7 @@ public sealed class RecordingToolbarOpacityTests
     [InlineData(true, 5, 51)]
     [InlineData(true, 140, 255)]
     public void ResolveIdleAlphaHonorsToggleAndClampsRange(
-        bool fadeWhenIdle,
-        int opacityPercent,
-        byte expectedAlpha)
+        bool fadeWhenIdle, int opacityPercent, byte expectedAlpha)
     {
         Assert.Equal(
             expectedAlpha,
@@ -418,11 +381,8 @@ public sealed class RecordingToolbarOpacityTests
 """,
     )
 
-    print(
-        "Recording toolbar opacity settings repair applied."
-        if changed
-        else "Recording toolbar opacity settings repair already applied."
-    )
+    print("Recording toolbar opacity settings repair applied." if changed
+          else "Recording toolbar opacity settings repair already applied.")
 
 
 if __name__ == "__main__":
