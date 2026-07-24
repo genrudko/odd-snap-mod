@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REGION_FORM = ROOT / "src/OddSnap/Capture/RegionOverlayForm.cs"
 INPUT_HELPERS = ROOT / "src/OddSnap/Capture/RegionOverlayForm.Input.Helpers.cs"
 APP_CAPTURE = ROOT / "src/OddSnap/App/App.Capture.cs"
+MONITOR_SELECTOR = ROOT / "src/OddSnap/Capture/RecordingCaptureTargetSelector.cs"
 
 
 def replace_once(path: Path, old: str, new: str) -> bool:
@@ -176,11 +177,68 @@ def main() -> None:
 
     changed |= replace_once(
         APP_CAPTURE,
+        """            case "_recordMonitor":
+                LaunchGifRecording(
+                    RecordingCaptureTargetSelector.GetMonitorTargetAt(System.Windows.Forms.Cursor.Position),
+                    openResultWindow);
+                break;
+""",
+        """            case "_recordMonitor":
+            {
+                var monitorTarget = RecordingCaptureTargetSelector.SelectMonitorAt(
+                    System.Windows.Forms.Cursor.Position);
+                if (monitorTarget is not null)
+                    LaunchGifRecording(monitorTarget, openResultWindow);
+                else
+                    ResetCapturing();
+                break;
+            }
+""",
+    )
+
+    changed |= replace_once(
+        APP_CAPTURE,
         """                if (windowTarget is not null)
                     LaunchGifRecording(windowTarget);
 """,
         """                if (windowTarget is not null)
                     LaunchGifRecording(windowTarget, openResultWindow);
+""",
+    )
+
+    changed |= replace_once(
+        MONITOR_SELECTOR,
+        """    public static RecordingCaptureTarget GetMonitorTargetAt(Point screenPoint)
+""",
+        """    public static RecordingCaptureTarget? SelectMonitorAt(Point screenPoint)
+""",
+    )
+
+    changed |= replace_once(
+        MONITOR_SELECTOR,
+        """        if (selectedTarget is not null)
+            return selectedTarget;
+
+        using var fallbackDpiScope = DpiAwarenessScope.EnterPerMonitorV2();
+        return CreateTargetForMonitor(FindMonitorAt(screenPoint, GetOrderedMonitors()));
+    }
+
+    private static MonitorDescriptor[] GetOrderedMonitors()
+""",
+        """        return selectedTarget;
+    }
+
+    public static RecordingCaptureTarget GetMonitorTargetAt(Point screenPoint)
+    {
+        var selectedTarget = SelectMonitorAt(screenPoint);
+        if (selectedTarget is not null)
+            return selectedTarget;
+
+        using var fallbackDpiScope = DpiAwarenessScope.EnterPerMonitorV2();
+        return CreateTargetForMonitor(FindMonitorAt(screenPoint, GetOrderedMonitors()));
+    }
+
+    private static MonitorDescriptor[] GetOrderedMonitors()
 """,
     )
 
