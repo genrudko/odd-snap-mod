@@ -22,16 +22,8 @@ jobs:
           ref: feature/snipping-launcher
           fetch-depth: 0
 
-      - name: Apply recording launcher repairs
-        run: |
-          python tools/apply_snipping_launcher_repair3.py
-          python tools/apply_snipping_start_handoff_repair4.py
-          python tools/apply_preselected_recording_start_repair5.py
-          python tools/apply_snipping_overlay_close_handoff_repair6.py
-          python tools/apply_snipping_toolbar_restore_repair7.py
-          python tools/apply_snipping_toolbar_persistent_repair8.py
-          python tools/apply_snipping_recording_targets_repair9.py
-          python tools/apply_recording_toolbar_opacity_settings_repair10.py
+      - name: Apply recording toolbar opacity settings
+        run: python tools/apply_recording_toolbar_opacity_settings_repair10.py
 
       - name: Verify generated diff
         shell: bash
@@ -39,20 +31,11 @@ jobs:
           git diff --check
           git diff -- \
             src/OddSnap/Models/AppSettings.cs \
-            src/OddSnap/Capture/RegionOverlayForm.cs \
-            src/OddSnap/Capture/RegionOverlayForm.Input.Tools.cs \
-            src/OddSnap/Capture/RegionOverlayForm.Input.Helpers.cs \
-            src/OddSnap/Capture/RegionOverlayForm.Lifecycle.cs \
-            src/OddSnap/Capture/RecordingCaptureTargetSelector.cs \
             src/OddSnap/App/App.Capture.cs \
             src/OddSnap/Capture/RecordingForm.cs \
-            src/OddSnap/Capture/RecordingForm.Targets.cs \
             src/OddSnap/Capture/RecordingToolbarForm.cs \
             src/OddSnap/UI/SettingsWindow.xaml \
             src/OddSnap/UI/SettingsWindow.RecordingToolbarOpacity.cs \
-            src/OddSnap.Tests/SnippingRecordingStartTests.cs \
-            src/OddSnap.Tests/SnippingRecordingToolbarPersistenceTests.cs \
-            src/OddSnap.Tests/SnippingRecordingTargetToolbarTests.cs \
             src/OddSnap.Tests/RecordingToolbarOpacityTests.cs
 
       - name: Setup .NET 9
@@ -82,20 +65,11 @@ jobs:
         run: |
           if git diff --quiet -- \
             src/OddSnap/Models/AppSettings.cs \
-            src/OddSnap/Capture/RegionOverlayForm.cs \
-            src/OddSnap/Capture/RegionOverlayForm.Input.Tools.cs \
-            src/OddSnap/Capture/RegionOverlayForm.Input.Helpers.cs \
-            src/OddSnap/Capture/RegionOverlayForm.Lifecycle.cs \
-            src/OddSnap/Capture/RecordingCaptureTargetSelector.cs \
             src/OddSnap/App/App.Capture.cs \
             src/OddSnap/Capture/RecordingForm.cs \
-            src/OddSnap/Capture/RecordingForm.Targets.cs \
             src/OddSnap/Capture/RecordingToolbarForm.cs \
             src/OddSnap/UI/SettingsWindow.xaml \
             src/OddSnap/UI/SettingsWindow.RecordingToolbarOpacity.cs \
-            src/OddSnap.Tests/SnippingRecordingStartTests.cs \
-            src/OddSnap.Tests/SnippingRecordingToolbarPersistenceTests.cs \
-            src/OddSnap.Tests/SnippingRecordingTargetToolbarTests.cs \
             src/OddSnap.Tests/RecordingToolbarOpacityTests.cs; then
             echo "No generated source changes to commit."
           else
@@ -103,20 +77,11 @@ jobs:
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add \
               src/OddSnap/Models/AppSettings.cs \
-              src/OddSnap/Capture/RegionOverlayForm.cs \
-              src/OddSnap/Capture/RegionOverlayForm.Input.Tools.cs \
-              src/OddSnap/Capture/RegionOverlayForm.Input.Helpers.cs \
-              src/OddSnap/Capture/RegionOverlayForm.Lifecycle.cs \
-              src/OddSnap/Capture/RecordingCaptureTargetSelector.cs \
               src/OddSnap/App/App.Capture.cs \
               src/OddSnap/Capture/RecordingForm.cs \
-              src/OddSnap/Capture/RecordingForm.Targets.cs \
               src/OddSnap/Capture/RecordingToolbarForm.cs \
               src/OddSnap/UI/SettingsWindow.xaml \
               src/OddSnap/UI/SettingsWindow.RecordingToolbarOpacity.cs \
-              src/OddSnap.Tests/SnippingRecordingStartTests.cs \
-              src/OddSnap.Tests/SnippingRecordingToolbarPersistenceTests.cs \
-              src/OddSnap.Tests/SnippingRecordingTargetToolbarTests.cs \
               src/OddSnap.Tests/RecordingToolbarOpacityTests.cs
             git commit -m "feat: add recording toolbar opacity settings"
             git push origin HEAD:feature/snipping-launcher
