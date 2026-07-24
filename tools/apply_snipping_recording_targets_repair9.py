@@ -35,16 +35,12 @@ def main() -> None:
 
     changed |= replace_once(
         REGION_FORM,
-        """        var screenshotToggle = new ToolDef("_snipScreenshot", "Screenshot", '\0', null, -1);
-        var recordingToggle = new ToolDef("_snipRecording", "Screen recording", '\0', null, -1);
-        var rectangle = ToolDef.AllTools.First(t => t.Id == "rect");
+        """        var rectangle = ToolDef.AllTools.First(t => t.Id == "rect");
 
         var recordingTools = new List<ToolDef> { screenshotToggle, recordingToggle, rectangle };
 """,
-        """        var screenshotToggle = new ToolDef("_snipScreenshot", "Screenshot", '\0', null, -1);
-        var recordingToggle = new ToolDef("_snipRecording", "Screen recording", '\0', null, -1);
-        var rectangle = ToolDef.AllTools.First(t => t.Id == "rect");
-        var recordArea = new ToolDef("_snipArea", "Record area", '\0', CaptureMode.Rectangle, -1);
+        """        var rectangle = ToolDef.AllTools.First(t => t.Id == "rect");
+        var recordArea = new ToolDef("_snipArea", "Record area", '\\0', CaptureMode.Rectangle, -1);
         var recordWindow = ToolDef.ToolbarActions.First(t => t.Id == "_recordWindow");
         var recordMonitor = ToolDef.ToolbarActions.First(t => t.Id == "_recordMonitor");
 
