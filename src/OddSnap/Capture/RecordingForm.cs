@@ -148,6 +148,12 @@ public sealed partial class RecordingForm : Form
         Focus();
         _escapeHook = CaptureEscapeKeyHook.Install(this, CancelFromEscape);
         _selectionAdorner?.Show(this);
+
+        // Preselected monitor/window/region workflows must enter recording from this
+        // deterministic lifecycle point. Relying on an externally attached Shown
+        // handler allowed the form to remain indefinitely in its selection phase.
+        if (_preselectedTargetStartQueued)
+            StartPreselectedTargetNow();
     }
 
     // ─── Selection phase ──────────────────────────────────────────────

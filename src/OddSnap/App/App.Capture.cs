@@ -57,9 +57,20 @@ public partial class App
                 var settings = _settingsService!.Settings;
                 Helpers.UiChrome.SetUiScale(settings.UiScale);
                 bool showCursor = settings.ShowCursor;
-                var capture = ScreenCapture.CaptureAllScreens(showCursor);
-                selectionScreenshot = capture.Bitmap;
-                var bounds = capture.Bounds;
+                Rectangle bounds;
+                if (preselectedTarget is null)
+                {
+                    var capture = ScreenCapture.CaptureAllScreens(showCursor);
+                    selectionScreenshot = capture.Bitmap;
+                    bounds = capture.Bounds;
+                }
+                else
+                {
+                    // A Snipping Launcher selection already supplied the final physical
+                    // desktop bounds. Do not show a second frozen screenshot-selection
+                    // surface before recording starts.
+                    bounds = ScreenCapture.GetVirtualScreenBounds();
+                }
                 var s = settings;
                 var fmt = s.RecordingFormat;
 

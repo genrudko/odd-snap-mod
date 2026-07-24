@@ -44,26 +44,31 @@ public sealed partial class RecordingForm
             clippedBounds.Height);
         _selectionCursor = new Point(_selection.Right, _selection.Bottom);
 
-        if (_preselectedTargetStartQueued)
-            return;
-
         _preselectedTargetStartQueued = true;
-        Shown += StartPreselectedTargetAfterShown;
+
+        // The target is already final, so the selection adorner and crosshair must
+        // never be shown for this form. The OnShown lifecycle starts recording.
+        _selectionAdorner?.Dispose();
+        _selectionAdorner = null;
+        Cursor = Cursors.Default;
     }
 
-    private void StartPreselectedTargetAfterShown(object? sender, EventArgs e)
+    private void StartPreselectedTargetNow()
     {
-        Shown -= StartPreselectedTargetAfterShown;
-
-        if (_state != State.Selecting || _captureTarget is null)
-            return;
-
-        BeginInvoke(new Action(() =>
+        if (!_preselectedTargetStartQueued ||
+            _state != State.Selecting ||
+            _captureTarget is null)
         {
-            StartRecording();
-            StartWindowChromeTracking();
-        }));
+            return;
+        }
+
+        _preselectedTargetStartQueued = false;
+        StartRecording();
+        StartWindowChromeTracking();
     }
+
+    internal bool IsRecordingActiveForTests =>
+        _state == State.Recording && (_recorder is not null || _videoRecorder is not null);
 
     private void EnsureRegionCaptureTarget(Rectangle screenRegion)
     {
