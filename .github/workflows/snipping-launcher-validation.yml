@@ -26,7 +26,9 @@ jobs:
         run: |
           python tools/apply_recording_toolbar_opacity_constructor_prepatch.py
           python tools/apply_recording_toolbar_opacity_method_prepatch.py
+          python tools/apply_recording_toolbar_opacity_properties_prepatch.py
           python tools/apply_recording_toolbar_opacity_settings_repair10.py
+          python tools/apply_recording_toolbar_opacity_code_postpatch.py
 
       - name: Verify generated diff
         shell: bash
