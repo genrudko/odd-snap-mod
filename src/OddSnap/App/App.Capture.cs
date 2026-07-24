@@ -416,6 +416,7 @@ public partial class App
     {
         Bitmap? screenshot = null;
         bool captureFlowHandedOff = false;
+        RecordingCaptureTarget? pendingRecordingTarget = null;
         try
         {
             var screenshotStarted = PerformanceTrace.Timestamp();
@@ -470,20 +471,12 @@ public partial class App
             overlay.RecordingRegionSelected += sel =>
             {
                 captureFlowHandedOff = true;
-                overlay.Hide();
-                overlay.Close();
                 var screenRegion = new Rectangle(
                     bounds.X + sel.X,
                     bounds.Y + sel.Y,
                     sel.Width,
                     sel.Height);
-
-                // LaunchGifRecording only creates the dedicated recording STA thread.
-                // Calling it directly here avoids losing the handoff when the overlay
-                // closes before a queued dispatcher callback gets a chance to run.
-                LaunchGifRecording(
-                    RecordingCaptureTarget.ForRegion(screenRegion),
-                    openResultWindow: true);
+                pendingRecordingTarget = RecordingCaptureTarget.ForRegion(screenRegion);
             };
 
             overlay.FreeformSelected += fbmp =>
@@ -697,9 +690,18 @@ public partial class App
             overlay.FormClosed += (_, _) =>
             {
                 screenshot?.Dispose();
+                screenshot = null;
+
+                // The old launcher and its owned layered windows are now fully closed.
+                // Only at this point may the dedicated recording form be created.
+                if (pendingRecordingTarget is not null)
+                {
+                    LaunchGifRecording(pendingRecordingTarget, openResultWindow: true);
+                    return;
+                }
+
                 if (captureFlowHandedOff)
                     return;
-                screenshot = null;
 
                 var mode = overlay.CurrentMode;
                 if (mode is CaptureMode.Rectangle or CaptureMode.Center or CaptureMode.Freeform)

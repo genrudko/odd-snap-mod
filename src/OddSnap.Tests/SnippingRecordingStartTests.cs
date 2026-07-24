@@ -52,7 +52,7 @@ public sealed class SnippingRecordingStartTests
                 watchdog = new System.Windows.Forms.Timer { Interval = 50 };
                 watchdog.Tick += (_, _) =>
                 {
-                    if (form.IsRecordingActiveForTests)
+                    if (form.IsRecordingActiveForTests && form.IsRecordingChromeVisibleForTests)
                     {
                         started = true;
                         watchdog.Stop();

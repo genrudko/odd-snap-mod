@@ -70,6 +70,9 @@ public sealed partial class RecordingForm
     internal bool IsRecordingActiveForTests =>
         _state == State.Recording && (_recorder is not null || _videoRecorder is not null);
 
+    internal bool IsRecordingChromeVisibleForTests =>
+        _recordingBorderForm?.Visible == true && _recordingToolbarForm?.Visible == true;
+
     private void EnsureRegionCaptureTarget(Rectangle screenRegion)
     {
         _captureTarget ??= RecordingCaptureTarget.ForRegion(screenRegion);

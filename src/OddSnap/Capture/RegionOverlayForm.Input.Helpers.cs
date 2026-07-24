@@ -122,7 +122,7 @@ public sealed partial class RegionOverlayForm
             if (_snippingLauncherMode == SnippingLauncherMode.Recording &&
                 _selectionRect.Width > 2 && _selectionRect.Height > 2)
             {
-                RecordingRegionSelected?.Invoke(_selectionRect);
+                BeginSnippingRecordingHandoff(_selectionRect);
             }
             return;
         }
