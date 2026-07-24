@@ -26,12 +26,17 @@ jobs:
         run: |
           python tools/apply_snipping_launcher_repair3.py
           python tools/apply_snipping_start_handoff_repair4.py
+          python tools/apply_preselected_recording_start_repair5.py
 
       - name: Verify generated diff
         shell: bash
         run: |
           git diff --check
-          git diff -- src/OddSnap/Capture/RegionOverlayForm.Input.Tools.cs src/OddSnap/App/App.Capture.cs
+          git diff -- \
+            src/OddSnap/Capture/RegionOverlayForm.Input.Tools.cs \
+            src/OddSnap/App/App.Capture.cs \
+            src/OddSnap/Capture/RecordingForm.cs \
+            src/OddSnap/Capture/RecordingForm.Targets.cs
 
       - name: Setup .NET 9
         uses: actions/setup-dotnet@v4
@@ -58,13 +63,21 @@ jobs:
         if: github.event_name == 'push'
         shell: bash
         run: |
-          if git diff --quiet -- src/OddSnap/Capture/RegionOverlayForm.Input.Tools.cs src/OddSnap/App/App.Capture.cs; then
+          if git diff --quiet -- \
+            src/OddSnap/Capture/RegionOverlayForm.Input.Tools.cs \
+            src/OddSnap/App/App.Capture.cs \
+            src/OddSnap/Capture/RecordingForm.cs \
+            src/OddSnap/Capture/RecordingForm.Targets.cs; then
             echo "No generated source changes to commit."
           else
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add src/OddSnap/Capture/RegionOverlayForm.Input.Tools.cs src/OddSnap/App/App.Capture.cs
-            git commit -m "fix: complete snipping recording start handoff"
+            git add \
+              src/OddSnap/Capture/RegionOverlayForm.Input.Tools.cs \
+              src/OddSnap/App/App.Capture.cs \
+              src/OddSnap/Capture/RecordingForm.cs \
+              src/OddSnap/Capture/RecordingForm.Targets.cs
+            git commit -m "fix: start preselected snipping recording deterministically"
             git push origin HEAD:feature/snipping-launcher
           fi
 
