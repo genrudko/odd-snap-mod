@@ -77,7 +77,7 @@ public sealed partial class RecordingForm
 
             var toolbarBounds = GetRecordingToolbarScreenBounds();
             if (_recordingToolbarForm is not null && !toolbarBounds.IsEmpty)
-                _recordingToolbarForm.Bounds = toolbarBounds;
+                _recordingToolbarForm.ApplyAutomaticBounds(toolbarBounds);
         }
 
         SetTrackedWindowChromeVisible(true);

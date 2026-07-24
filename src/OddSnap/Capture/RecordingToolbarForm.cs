@@ -7,10 +7,21 @@ namespace OddSnap.Capture;
 
 internal sealed class RecordingToolbarForm : Form
 {
+    private const byte ActiveAlpha = 255;
+    private const byte IdleAlpha = 140;
+    private static readonly TimeSpan IdleDelay = TimeSpan.FromMilliseconds(850);
+
     private readonly RecordingForm _owner;
+    private readonly System.Windows.Forms.Timer _fadeTimer;
     private Bitmap? _surface;
     private Graphics? _surfaceGraphics;
     private int _hoveredButton = -1;
+    private DateTime _lastInteractionUtc = DateTime.UtcNow;
+    private byte _surfaceAlpha = ActiveAlpha;
+    private bool _pointerInside;
+    private bool _dragging;
+    private Point _dragOffset;
+    private Point? _manualOffsetInMonitor;
 
     public RecordingToolbarForm(RecordingForm owner)
     {
@@ -19,6 +30,10 @@ internal sealed class RecordingToolbarForm : Form
         ShowInTaskbar = false;
         TopMost = owner.TopMost;
         StartPosition = FormStartPosition.Manual;
+
+        _fadeTimer = new System.Windows.Forms.Timer { Interval = 35 };
+        _fadeTimer.Tick += (_, _) => UpdateIdleOpacity();
+        _fadeTimer.Start();
     }
 
     protected override CreateParams CreateParams
@@ -39,6 +54,38 @@ internal sealed class RecordingToolbarForm : Form
     {
         base.OnHandleCreated(e);
         CaptureWindowExclusion.Apply(this);
+    }
+
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+        WakeSurface();
+        UpdateSurface();
+    }
+
+    public void ApplyAutomaticBounds(Rectangle requestedBounds)
+    {
+        if (requestedBounds.Width <= 0 || requestedBounds.Height <= 0 || IsDisposed)
+            return;
+
+        var workArea = ResolveWorkArea(requestedBounds);
+        Rectangle target;
+        if (_manualOffsetInMonitor is { } offset)
+        {
+            target = new Rectangle(
+                workArea.Left + offset.X,
+                workArea.Top + offset.Y,
+                requestedBounds.Width,
+                requestedBounds.Height);
+        }
+        else
+        {
+            target = requestedBounds;
+        }
+
+        target = ClampToWorkArea(target, workArea);
+        if (Bounds != target)
+            Bounds = target;
     }
 
     public void UpdateSurface()
@@ -73,7 +120,7 @@ internal sealed class RecordingToolbarForm : Form
         {
             BlendOp = 0,
             BlendFlags = 0,
-            SourceConstantAlpha = 255,
+            SourceConstantAlpha = _surfaceAlpha,
             AlphaFormat = 1
         };
 
@@ -102,16 +149,28 @@ internal sealed class RecordingToolbarForm : Form
         }
     }
 
+    protected override void OnMouseEnter(EventArgs e)
+    {
+        base.OnMouseEnter(e);
+        _pointerInside = true;
+        WakeSurface();
+    }
+
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
+        _pointerInside = true;
+        WakeSurface();
+
+        if (_dragging)
+        {
+            MoveByPointer();
+            return;
+        }
 
         int previous = _hoveredButton;
-        _hoveredButton = RecordingForm.GetRecordingToolbarPauseButton(ClientRectangle).Contains(e.Location) ? 0
-            : RecordingForm.GetRecordingToolbarStopButton(ClientRectangle).Contains(e.Location) ? 1
-            : RecordingForm.GetRecordingToolbarDiscardButton(ClientRectangle).Contains(e.Location) ? 2
-            : -1;
-        Cursor = _hoveredButton >= 0 ? Cursors.Hand : Cursors.Default;
+        _hoveredButton = GetButtonAt(e.Location);
+        Cursor = _hoveredButton >= 0 ? Cursors.Hand : Cursors.SizeAll;
         if (_hoveredButton != previous)
             UpdateSurface();
     }
@@ -119,12 +178,16 @@ internal sealed class RecordingToolbarForm : Form
     protected override void OnMouseLeave(EventArgs e)
     {
         base.OnMouseLeave(e);
-        if (_hoveredButton == -1)
+        if (_dragging)
             return;
 
-        _hoveredButton = -1;
+        _pointerInside = false;
+        if (_hoveredButton != -1)
+        {
+            _hoveredButton = -1;
+            UpdateSurface();
+        }
         Cursor = Cursors.Default;
-        UpdateSurface();
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
@@ -133,12 +196,42 @@ internal sealed class RecordingToolbarForm : Form
         if (e.Button != MouseButtons.Left)
             return;
 
-        if (RecordingForm.GetRecordingToolbarPauseButton(ClientRectangle).Contains(e.Location))
+        WakeSurface();
+        int button = GetButtonAt(e.Location);
+        if (button == 0)
+        {
             _owner.RequestToolbarTogglePause();
-        else if (RecordingForm.GetRecordingToolbarStopButton(ClientRectangle).Contains(e.Location))
+            return;
+        }
+        if (button == 1)
+        {
             _owner.RequestToolbarStop();
-        else if (RecordingForm.GetRecordingToolbarDiscardButton(ClientRectangle).Contains(e.Location))
+            return;
+        }
+        if (button == 2)
+        {
             _owner.RequestToolbarDiscard();
+            return;
+        }
+
+        _dragging = true;
+        _dragOffset = e.Location;
+        Capture = true;
+        Cursor = Cursors.SizeAll;
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        base.OnMouseUp(e);
+        if (e.Button != MouseButtons.Left || !_dragging)
+            return;
+
+        MoveByPointer();
+        _dragging = false;
+        Capture = false;
+        _pointerInside = ClientRectangle.Contains(PointToClient(MousePosition));
+        Cursor = _pointerInside ? Cursors.SizeAll : Cursors.Default;
+        WakeSurface();
     }
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
@@ -152,10 +245,93 @@ internal sealed class RecordingToolbarForm : Form
         return base.ProcessCmdKey(ref msg, keyData);
     }
 
+    private int GetButtonAt(Point location) =>
+        RecordingForm.GetRecordingToolbarPauseButton(ClientRectangle).Contains(location) ? 0
+        : RecordingForm.GetRecordingToolbarStopButton(ClientRectangle).Contains(location) ? 1
+        : RecordingForm.GetRecordingToolbarDiscardButton(ClientRectangle).Contains(location) ? 2
+        : -1;
+
+    private void MoveByPointer()
+    {
+        if (!_dragging)
+            return;
+
+        var pointer = MousePosition;
+        var workArea = ResolveWorkArea(new Rectangle(pointer, new Size(1, 1)));
+        var requested = new Rectangle(
+            pointer.X - _dragOffset.X,
+            pointer.Y - _dragOffset.Y,
+            Width,
+            Height);
+        var clamped = ClampToWorkArea(requested, workArea);
+
+        if (Bounds != clamped)
+            Bounds = clamped;
+
+        _manualOffsetInMonitor = new Point(
+            clamped.Left - workArea.Left,
+            clamped.Top - workArea.Top);
+        UpdateSurface();
+    }
+
+    private void WakeSurface()
+    {
+        _lastInteractionUtc = DateTime.UtcNow;
+        if (_surfaceAlpha == ActiveAlpha)
+            return;
+
+        _surfaceAlpha = ActiveAlpha;
+        UpdateSurface();
+    }
+
+    private void UpdateIdleOpacity()
+    {
+        if (IsDisposed || !IsHandleCreated || !Visible)
+            return;
+
+        byte target = _pointerInside || _dragging || DateTime.UtcNow - _lastInteractionUtc < IdleDelay
+            ? ActiveAlpha
+            : IdleAlpha;
+        if (_surfaceAlpha == target)
+            return;
+
+        int delta = target > _surfaceAlpha ? 24 : -18;
+        int next = _surfaceAlpha + delta;
+        _surfaceAlpha = target > _surfaceAlpha
+            ? (byte)Math.Min(target, next)
+            : (byte)Math.Max(target, next);
+        UpdateSurface();
+    }
+
+    private static Rectangle ResolveWorkArea(Rectangle bounds)
+    {
+        try
+        {
+            return Screen.FromRectangle(bounds).WorkingArea;
+        }
+        catch
+        {
+            return SystemInformation.VirtualScreen;
+        }
+    }
+
+    private static Rectangle ClampToWorkArea(Rectangle bounds, Rectangle workArea)
+    {
+        int maxX = Math.Max(workArea.Left, workArea.Right - bounds.Width);
+        int maxY = Math.Max(workArea.Top, workArea.Bottom - bounds.Height);
+        return new Rectangle(
+            Math.Clamp(bounds.Left, workArea.Left, maxX),
+            Math.Clamp(bounds.Top, workArea.Top, maxY),
+            bounds.Width,
+            bounds.Height);
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)
         {
+            _fadeTimer.Stop();
+            _fadeTimer.Dispose();
             if (IsHandleCreated)
                 CaptureWindowExclusion.Unregister(Handle);
             _surfaceGraphics?.Dispose();
