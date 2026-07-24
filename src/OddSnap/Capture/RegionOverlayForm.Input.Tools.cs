@@ -709,12 +709,19 @@ public sealed partial class RegionOverlayForm
                     _autoDetectRect = Rectangle.Empty;
                     _autoDetectActive = false;
                     _hasSelection = true;
+                    CalcToolbar();
+                    PositionToolbarForm();
                     RefreshToolbar();
+                    UpdateToolbarSurfaceOnly();
                     Invalidate(InflateForRepaint(_selectionRect, 12));
                 }
                 else if (isRecordingLauncher)
                 {
                     _hasSelection = false;
+                    CalcToolbar();
+                    PositionToolbarForm();
+                    RefreshToolbar();
+                    UpdateToolbarSurfaceOnly();
                     Invalidate();
                 }
                 else if (isCenter && _selectionRect.Width > 2 && _selectionRect.Height > 2)
