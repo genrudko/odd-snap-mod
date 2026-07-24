@@ -247,7 +247,7 @@ public sealed class HotkeyService : IDisposable
             return (IntPtr)1;
         }
 
-        if (message is User32.WM_KEYUP or User32.WM_SYSKEYUP &&
+        if ((message is User32.WM_KEYUP or User32.WM_SYSKEYUP) &&
             Interlocked.Exchange(ref _printScreenKeyDown, 0) != 0)
         {
             return (IntPtr)1;
