@@ -437,7 +437,10 @@ public sealed partial class RegionOverlayForm
     {
         int pw = ColorPickerColumns * (ColorPickerSwatchSize + ColorPickerPadding) + ColorPickerPadding;
         int ph = ColorPickerRows * (ColorPickerSwatchSize + ColorPickerPadding) + ColorPickerPadding;
-        var colorBtn = _toolbarButtons.Length > ColorButtonIndex ? _toolbarButtons[ColorButtonIndex] : Rectangle.Empty;
+        int colorButtonIndex = ColorButtonIndex;
+        var colorBtn = colorButtonIndex >= 0 && colorButtonIndex < _toolbarButtons.Length
+            ? _toolbarButtons[colorButtonIndex]
+            : Rectangle.Empty;
         return PositionPopupFromAnchor(colorBtn, pw, ph);
     }
 
