@@ -28,6 +28,7 @@ jobs:
           python tools/apply_snipping_start_handoff_repair4.py
           python tools/apply_preselected_recording_start_repair5.py
           python tools/apply_snipping_overlay_close_handoff_repair6.py
+          python tools/apply_snipping_toolbar_restore_repair7.py
 
       - name: Verify generated diff
         shell: bash
@@ -40,18 +41,6 @@ jobs:
             src/OddSnap/Capture/RecordingForm.cs \
             src/OddSnap/Capture/RecordingForm.Targets.cs \
             src/OddSnap.Tests/SnippingRecordingStartTests.cs
-
-      - name: Upload source snapshot
-        uses: actions/upload-artifact@v4
-        with:
-          name: snipping-source-snapshot
-          path: |
-            src/OddSnap/Capture
-            src/OddSnap/App
-            src/OddSnap.Tests
-            tools
-          if-no-files-found: error
-          retention-days: 2
 
       - name: Setup .NET 9
         uses: actions/setup-dotnet@v4
@@ -96,7 +85,7 @@ jobs:
               src/OddSnap/Capture/RecordingForm.cs \
               src/OddSnap/Capture/RecordingForm.Targets.cs \
               src/OddSnap.Tests/SnippingRecordingStartTests.cs
-            git commit -m "fix: close snipping overlay before recording starts"
+            git commit -m "fix: restore recording launcher toolbar after selection"
             git push origin HEAD:feature/snipping-launcher
           fi
 
