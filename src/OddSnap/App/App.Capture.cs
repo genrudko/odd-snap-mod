@@ -467,13 +467,12 @@ public partial class App
                     sel.Width,
                     sel.Height);
 
-                if (!TryPostToAppDispatcher(
-                        () => LaunchGifRecording(RecordingCaptureTarget.ForRegion(screenRegion), openResultWindow: true),
-                        DispatcherPriority.Background,
-                        "capture.snipping-recording-post"))
-                {
-                    ResetCapturingWithoutUiRestore();
-                }
+                // LaunchGifRecording only creates the dedicated recording STA thread.
+                // Calling it directly here avoids losing the handoff when the overlay
+                // closes before a queued dispatcher callback gets a chance to run.
+                LaunchGifRecording(
+                    RecordingCaptureTarget.ForRegion(screenRegion),
+                    openResultWindow: true);
             };
 
             overlay.FreeformSelected += fbmp =>
