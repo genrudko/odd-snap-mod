@@ -39,6 +39,12 @@ jobs:
           $output | ForEach-Object { Write-Host $_ }
           if ($exitCode -ne 0) { exit $exitCode }
 
+          $output = python tools/apply_recording_safety_audio_mux_helper_prepatch.py 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Add-Content -Path artifacts/patch.log -Encoding utf8
+          $output | ForEach-Object { Write-Host $_ }
+          if ($exitCode -ne 0) { exit $exitCode }
+
           $output = python tools/apply_recording_safety_audio_repair11.py 2>&1
           $exitCode = $LASTEXITCODE
           $output | Add-Content -Path artifacts/patch.log -Encoding utf8
