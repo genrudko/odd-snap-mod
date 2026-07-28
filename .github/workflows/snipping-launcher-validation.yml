@@ -22,7 +22,7 @@ jobs:
           ref: feature/snipping-launcher
           fetch-depth: 0
 
-      - name: Apply recording safety and dual-audio repair
+      - name: Apply recording safety and audio repairs
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
@@ -52,6 +52,12 @@ jobs:
           if ($exitCode -ne 0) { exit $exitCode }
 
           $output = python tools/apply_recording_safety_audio_tests_postpatch.py 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Add-Content -Path artifacts/patch.log -Encoding utf8
+          $output | ForEach-Object { Write-Host $_ }
+          if ($exitCode -ne 0) { exit $exitCode }
+
+          $output = python tools/apply_wasapi_microphone_signal_repair12.py 2>&1
           $exitCode = $LASTEXITCODE
           $output | Add-Content -Path artifacts/patch.log -Encoding utf8
           $output | ForEach-Object { Write-Host $_ }
@@ -111,7 +117,7 @@ jobs:
               src/OddSnap/Capture/RecordingToolbarForm.cs \
               src/OddSnap/Capture/VideoRecorder.cs \
               src/OddSnap.Tests/RecordingSafetyAndAudioMixTests.cs
-            git commit -m "fix: preserve recordings and mix microphone with desktop audio"
+            git commit -m "fix: capture microphone through WASAPI and reject silent audio"
             git push origin HEAD:feature/snipping-launcher
           fi
 
