@@ -22,8 +22,7 @@ public sealed class SnippingRecordingToolbarRestoreTests
 
         var thread = new Thread(() =>
         {
-            System.Windows.Forms.Timer? watchdog = null;
-            System.Threading.Timer? hardStop = null;
+            System.Windows.Forms.Timer? readinessTimer = null;
             try
             {
                 var bounds = new Rectangle(0, 0, 800, 600);
@@ -36,71 +35,51 @@ public sealed class SnippingRecordingToolbarRestoreTests
                     CenterSelectionAspectRatio.Free,
                     SnippingLauncherMode.Recording);
 
-                // Hosted Windows runners occasionally fail to deliver Shown or the
-                // WinForms timer tick promptly. Keep a non-UI watchdog so the test
-                // cannot strand its STA message loop indefinitely.
-                hardStop = new System.Threading.Timer(
-                    _ =>
-                    {
-                        try
-                        {
-                            if (!form.IsDisposed && form.IsHandleCreated)
-                                form.BeginInvoke(new Action(form.Close));
-                        }
-                        catch (ObjectDisposedException) { }
-                        catch (InvalidOperationException) { }
-                    },
-                    null,
-                    TimeSpan.FromSeconds(10),
-                    Timeout.InfiniteTimeSpan);
-
                 form.Shown += (_, _) =>
                 {
-                    form.BeginInvoke(new Action(() =>
+                    // Wait for the separate toolbar window to be created before
+                    // synthesizing the drag. Starting immediately from Shown races
+                    // QueueToolbarReady on hosted Windows runners.
+                    var deadline = DateTime.UtcNow.AddSeconds(5);
+                    readinessTimer = new System.Windows.Forms.Timer { Interval = 25 };
+                    readinessTimer.Tick += (_, _) =>
                     {
+                        var toolbar = GetToolbar(form);
+                        if (toolbar?.Visible != true)
+                        {
+                            if (DateTime.UtcNow >= deadline)
+                            {
+                                readinessTimer.Stop();
+                                form.Close();
+                            }
+                            return;
+                        }
+
+                        readinessTimer.Stop();
                         InvokeMouse(form, "OnMouseDown", MouseButtons.Left, 120, 160);
                         InvokeMouse(form, "OnMouseMove", MouseButtons.Left, 520, 380);
                         InvokeMouse(form, "OnMouseUp", MouseButtons.Left, 520, 380);
 
-                        var deadline = DateTime.UtcNow.AddSeconds(6);
-                        watchdog = new System.Windows.Forms.Timer { Interval = 50 };
-                        watchdog.Tick += (_, _) =>
-                        {
-                            var toolbarField = typeof(RegionOverlayForm).GetField("_toolbarForm", InstancePrivate);
-                            var toolsField = typeof(RegionOverlayForm).GetField("_mainBarTools", InstancePrivate);
-                            var toolbar = toolbarField?.GetValue(form) as Form;
-                            var tools = toolsField?.GetValue(form) as ToolDef[];
-
-                            if (toolbar?.Visible == true && tools?.Any(tool => tool.Id == "_snipStart") == true)
-                            {
-                                toolbarRestored = true;
-                                watchdog.Stop();
-                                form.Close();
-                                return;
-                            }
-
-                            if (DateTime.UtcNow >= deadline)
-                            {
-                                watchdog.Stop();
-                                form.Close();
-                            }
-                        };
-                        watchdog.Start();
-                    }));
+                        toolbar = GetToolbar(form);
+                        toolbarRestored = toolbar?.Visible == true &&
+                            GetTools(form).Any(tool => tool.Id == "_snipStart");
+                        form.Close();
+                    };
+                    readinessTimer.Start();
                 };
 
+                form.FormClosed += (_, _) => finished.Set();
                 Application.Run(form);
             }
             catch (Exception ex)
             {
                 failure = ex;
+                finished.Set();
             }
             finally
             {
-                watchdog?.Stop();
-                watchdog?.Dispose();
-                hardStop?.Dispose();
-                finished.Set();
+                readinessTimer?.Stop();
+                readinessTimer?.Dispose();
             }
         })
         {
@@ -110,11 +89,18 @@ public sealed class SnippingRecordingToolbarRestoreTests
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
 
-        Assert.True(finished.Wait(TimeSpan.FromSeconds(20)), "The recording selection toolbar test timed out.");
+        Assert.True(finished.Wait(TimeSpan.FromSeconds(12)), "The recording selection toolbar test timed out.");
         if (failure is not null)
             ExceptionDispatchInfo.Capture(failure).Throw();
         Assert.True(toolbarRestored, "The recording launcher toolbar stayed hidden or did not expose Start recording after mouse-up.");
     }
+
+    private static Form? GetToolbar(RegionOverlayForm form) =>
+        typeof(RegionOverlayForm).GetField("_toolbarForm", InstancePrivate)?.GetValue(form) as Form;
+
+    private static ToolDef[] GetTools(RegionOverlayForm form) =>
+        typeof(RegionOverlayForm).GetField("_mainBarTools", InstancePrivate)?.GetValue(form) as ToolDef[]
+        ?? Array.Empty<ToolDef>();
 
     private static void InvokeMouse(
         RegionOverlayForm form,
