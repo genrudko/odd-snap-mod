@@ -23,9 +23,20 @@ jobs:
           fetch-depth: 0
 
       - name: Apply recording safety and dual-audio repair
+        shell: pwsh
         run: |
-          python tools/apply_recording_safety_audio_repair11_fixpath.py
-          python tools/apply_recording_safety_audio_repair11.py
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          $output = python tools/apply_recording_safety_audio_repair11_fixpath.py 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Set-Content -Path artifacts/patch.log -Encoding utf8
+          $output | ForEach-Object { Write-Host $_ }
+          if ($exitCode -ne 0) { exit $exitCode }
+
+          $output = python tools/apply_recording_safety_audio_repair11.py 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Add-Content -Path artifacts/patch.log -Encoding utf8
+          $output | ForEach-Object { Write-Host $_ }
+          if ($exitCode -ne 0) { exit $exitCode }
 
       - name: Verify generated diff
         shell: bash
@@ -48,7 +59,6 @@ jobs:
       - name: Build solution
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
           $output = dotnet build OddSnap.sln -c Release --no-restore --verbosity quiet 2>&1
           $exitCode = $LASTEXITCODE
           $output | Set-Content -Path artifacts/build-full.log -Encoding utf8
@@ -103,6 +113,7 @@ jobs:
         with:
           name: snipping-launcher-validation-logs
           path: |
+            artifacts/patch.log
             artifacts/build-full.log
             artifacts/test-full.log
           if-no-files-found: ignore
