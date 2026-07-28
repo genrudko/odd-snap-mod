@@ -47,8 +47,8 @@ public sealed class SnippingRecordingToolbarRestoreTests
                             if (!form.IsDisposed && form.IsHandleCreated)
                                 form.BeginInvoke(new Action(form.Close));
                         }
-                        catch (InvalidOperationException) { }
                         catch (ObjectDisposedException) { }
+                        catch (InvalidOperationException) { }
                     },
                     null,
                     TimeSpan.FromSeconds(10),
