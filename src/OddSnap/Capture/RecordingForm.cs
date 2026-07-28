@@ -195,7 +195,7 @@ public sealed partial class RecordingForm : Form
     {
         if (_state == State.Recording)
         {
-            DiscardRecording();
+            StopRecording();
             return;
         }
 
@@ -350,7 +350,7 @@ public sealed partial class RecordingForm : Form
         }
     }
 
-    internal void PaintRecordingToolbarTo(Graphics g, Rectangle bounds, int hoveredButton)
+    internal void PaintRecordingToolbarTo(Graphics g, Rectangle bounds, int hoveredButton, bool discardArmed)
     {
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.CompositingMode = CompositingMode.SourceOver;
@@ -371,20 +371,23 @@ public sealed partial class RecordingForm : Form
             g.FillEllipse(_dotBrush, dotX, dotY, 10, 10);
         g.DrawEllipse(_ringPen, dotX, dotY, 10, 10);
 
-        string time = $"{(int)elapsed.TotalMinutes:D2}:{elapsed.Seconds:D2}";
+        string time = discardArmed
+            ? "Click × again to discard"
+            : $"{(int)elapsed.TotalMinutes:D2}:{elapsed.Seconds:D2}";
         var pauseButton = GetRecordingToolbarPauseButton(bounds);
         var stopButton = GetRecordingToolbarStopButton(bounds);
         var discardButton = GetRecordingToolbarDiscardButton(bounds);
         var timeRect = new RectangleF(dotX + 18, bounds.Y, pauseButton.X - (dotX + 24), bounds.Height);
         using (var timeFormat = new StringFormat { LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap })
-            g.DrawString(time, _timeFont, _timeBrush, timeRect, timeFormat);
+            g.DrawString(time, discardArmed ? _hintFont : _timeFont, _timeBrush, timeRect, timeFormat);
 
         DrawIconBtn(g, pauseButton, paused ? "_recordResume" : "_recordPause", hoveredButton == 0,
             UiChrome.SurfaceTextPrimary, active: paused);
         DrawIconBtn(g, stopButton, "stopSquare", hoveredButton == 1,
             UiChrome.SurfaceTextPrimary, active: false);
         DrawIconBtn(g, discardButton, "close", hoveredButton == 2,
-            UiChrome.SurfaceTextPrimary, active: false);
+            discardArmed ? Color.FromArgb(255, 239, 68, 68) : UiChrome.SurfaceTextPrimary,
+            active: discardArmed);
     }
 
     internal static Rectangle GetRecordingToolbarDiscardButton(Rectangle toolbarBounds)

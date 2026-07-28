@@ -649,21 +649,39 @@ public sealed class VideoRecorder : IDisposable
             string args = BuildMuxArguments(videoPath, audioFiles, tempOut, audioCodec, targetDurationSeconds);
             var result = RunProcessWithLimitedOutput(ffmpegPath, args, timeoutMs: 30_000);
 
-            if (!result.TimedOut && result.ExitCode == 0 && HasNonEmptyFile(tempOut))
-            {
-                File.Delete(videoPath);
-                File.Move(tempOut, videoPath);
+            if (TryPromoteMuxedOutput(videoPath, tempOut, result))
                 return true;
-            }
-            else
+
+            AppDiagnostics.LogWarning(
+                "recording.mux-audio",
+                result.TimedOut
+                    ? $"Audio mux timed out for {Path.GetFileName(videoPath)}."
+                    : $"Audio mux failed for {Path.GetFileName(videoPath)}. FFmpeg exit={result.ExitCode}. {result.StdErr}");
+            TryDeleteRecordingTempFile(tempOut, "failed mux output");
+
+            // A failed two-source mix must never silently remove every audio track.
+            // Retry each captured source independently and keep the first valid result.
+            if (audioFiles.Count > 1)
             {
-                // Mux failed — keep the original video without audio
-                AppDiagnostics.LogWarning(
-                    "recording.mux-audio",
-                    result.TimedOut
-                        ? $"Audio mux timed out for {Path.GetFileName(videoPath)}."
-                        : $"Audio mux failed for {Path.GetFileName(videoPath)}. FFmpeg exit={result.ExitCode}. {result.StdErr}");
-                TryDeleteRecordingTempFile(tempOut, "failed mux output");
+                foreach (var fallbackAudio in audioFiles)
+                {
+                    string fallbackArgs = BuildMuxArguments(
+                        videoPath,
+                        new[] { fallbackAudio },
+                        tempOut,
+                        audioCodec,
+                        targetDurationSeconds);
+                    var fallbackResult = RunProcessWithLimitedOutput(ffmpegPath, fallbackArgs, timeoutMs: 30_000);
+                    if (TryPromoteMuxedOutput(videoPath, tempOut, fallbackResult))
+                    {
+                        AppDiagnostics.LogWarning(
+                            "recording.mux-audio-fallback",
+                            $"Mixed audio failed; preserved {Path.GetFileName(fallbackAudio)} as the recording audio track.");
+                        return true;
+                    }
+
+                    TryDeleteRecordingTempFile(tempOut, "failed fallback mux output");
+                }
             }
         }
         catch
@@ -679,6 +697,19 @@ public sealed class VideoRecorder : IDisposable
         }
 
         return false;
+    }
+
+    private static bool TryPromoteMuxedOutput(
+        string videoPath,
+        string tempOut,
+        ProcessCaptureResult result)
+    {
+        if (result.TimedOut || result.ExitCode != 0 || !HasNonEmptyFile(tempOut))
+            return false;
+
+        File.Delete(videoPath);
+        File.Move(tempOut, videoPath);
+        return true;
     }
 
     private static void StopCaptureAndWait(IWaveIn? capture, int timeoutMs = 5_000)
@@ -731,8 +762,12 @@ public sealed class VideoRecorder : IDisposable
                    $"-c:v copy -c:a {audioCodec} -map 0:v -map \"[a]\"{muxerArgs} \"{tempOut}\"";
         }
 
+        const string normalizeAudio = "aresample=48000:async=1:first_pts=0,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo";
         return $"-y -i \"{videoPath}\" -i \"{audioFiles[0]}\" -i \"{audioFiles[1]}\" " +
-               $"-filter_complex \"[1:a][2:a]amix=inputs=2:duration=longest:dropout_transition=0,apad,atrim=0:{duration}[a]\" " +
+               $"-filter_complex \"[1:a]{normalizeAudio},volume=0.75[desktop];" +
+               $"[2:a]{normalizeAudio},volume=0.75[mic];" +
+               $"[desktop][mic]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0," +
+               $"alimiter=limit=0.95,apad,atrim=0:{duration}[a]\" " +
                $"-c:v copy -c:a {audioCodec} -map 0:v -map \"[a]\"{muxerArgs} \"{tempOut}\"";
     }
 
