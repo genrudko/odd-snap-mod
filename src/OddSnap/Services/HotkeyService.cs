@@ -1,4 +1,8 @@
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows.Interop;
+using System.Windows.Threading;
 using OddSnap.Native;
 
 namespace OddSnap.Services;
@@ -18,6 +22,12 @@ public sealed class HotkeyService : IDisposable
     private const int HOTKEY_SCROLL_CAPTURE = 9011;
     private const int HOTKEY_AI_REDIRECT = 9012;
     private const int HOTKEY_CENTER = 9013;
+
+    private readonly User32.LowLevelKeyboardProc _printScreenProc;
+    private IntPtr _printScreenHook;
+    private int _printScreenKeyDown;
+    private int _printScreenPosted;
+
     private bool _captureRegistered;
     private bool _ocrRegistered;
     private bool _pickerRegistered;
@@ -46,6 +56,11 @@ public sealed class HotkeyService : IDisposable
     public event Action? ScrollCaptureHotkeyPressed;
     public event Action? AiRedirectHotkeyPressed;
     public event Action? CenterHotkeyPressed;
+
+    public HotkeyService()
+    {
+        _printScreenProc = PrintScreenHookProc;
+    }
 
     private void EnsureMessageHook()
     {
@@ -93,6 +108,7 @@ public sealed class HotkeyService : IDisposable
         User32.UnregisterHotKey(IntPtr.Zero, HOTKEY_SCROLL_CAPTURE);
         User32.UnregisterHotKey(IntPtr.Zero, HOTKEY_AI_REDIRECT);
         User32.UnregisterHotKey(IntPtr.Zero, HOTKEY_CENTER);
+        RemovePrintScreenHook();
         _captureRegistered = false;
         _ocrRegistered = false;
         _pickerRegistered = false;
@@ -110,6 +126,19 @@ public sealed class HotkeyService : IDisposable
 
     public bool Register(uint modifiers, uint key)
     {
+        if (_captureRegistered)
+        {
+            User32.UnregisterHotKey(IntPtr.Zero, HOTKEY_CAPTURE);
+            _captureRegistered = false;
+        }
+        RemovePrintScreenHook();
+
+        if (key == 0)
+            return true;
+
+        if (modifiers == 0 && key == User32.VK_SNAPSHOT)
+            return InstallPrintScreenHook();
+
         return RegisterHotkey(ref _captureRegistered, HOTKEY_CAPTURE, modifiers, key);
     }
 
@@ -173,6 +202,110 @@ public sealed class HotkeyService : IDisposable
         return RegisterHotkey(ref _centerRegistered, HOTKEY_CENTER, modifiers, key);
     }
 
+    private bool InstallPrintScreenHook()
+    {
+        if (_printScreenHook != IntPtr.Zero)
+            return true;
+
+        IntPtr moduleHandle = IntPtr.Zero;
+        try
+        {
+            string? moduleName = Process.GetCurrentProcess().MainModule?.ModuleName;
+            if (!string.IsNullOrWhiteSpace(moduleName))
+                moduleHandle = Kernel32.GetModuleHandle(moduleName);
+        }
+        catch
+        {
+            moduleHandle = IntPtr.Zero;
+        }
+
+        _printScreenHook = User32.SetWindowsHookEx(
+            User32.WH_KEYBOARD_LL,
+            _printScreenProc,
+            moduleHandle,
+            0);
+        return _printScreenHook != IntPtr.Zero;
+    }
+
+    private IntPtr PrintScreenHookProc(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        if (nCode < 0 || lParam == IntPtr.Zero)
+            return User32.CallNextHookEx(_printScreenHook, nCode, wParam, lParam);
+
+        int vkCode = Marshal.ReadInt32(lParam);
+        if (vkCode != User32.VK_SNAPSHOT)
+            return User32.CallNextHookEx(_printScreenHook, nCode, wParam, lParam);
+
+        int message = unchecked((int)wParam.ToInt64());
+        if (message is User32.WM_KEYDOWN or User32.WM_SYSKEYDOWN)
+        {
+            if (HasPressedModifier())
+                return User32.CallNextHookEx(_printScreenHook, nCode, wParam, lParam);
+
+            if (Interlocked.Exchange(ref _printScreenKeyDown, 1) == 0)
+                PostPrintScreenCapture();
+            return (IntPtr)1;
+        }
+
+        if ((message is User32.WM_KEYUP or User32.WM_SYSKEYUP) &&
+            Interlocked.Exchange(ref _printScreenKeyDown, 0) != 0)
+        {
+            return (IntPtr)1;
+        }
+
+        return User32.CallNextHookEx(_printScreenHook, nCode, wParam, lParam);
+    }
+
+    private static bool HasPressedModifier() =>
+        IsKeyDown(User32.VK_SHIFT) ||
+        IsKeyDown(User32.VK_CONTROL) ||
+        IsKeyDown(User32.VK_MENU) ||
+        IsKeyDown(User32.VK_LWIN) ||
+        IsKeyDown(User32.VK_RWIN);
+
+    private static bool IsKeyDown(int virtualKey) =>
+        (User32.GetKeyState(virtualKey) & 0x8000) != 0;
+
+    private bool PostPrintScreenCapture()
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished)
+            return false;
+
+        if (Interlocked.Exchange(ref _printScreenPosted, 1) != 0)
+            return true;
+
+        try
+        {
+            dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
+            {
+                try
+                {
+                    InvokeHandlersSafely(HotkeyPressed, "hotkey.print-screen");
+                }
+                finally
+                {
+                    Volatile.Write(ref _printScreenPosted, 0);
+                }
+            }));
+            return true;
+        }
+        catch
+        {
+            Volatile.Write(ref _printScreenPosted, 0);
+            return false;
+        }
+    }
+
+    private void RemovePrintScreenHook()
+    {
+        Volatile.Write(ref _printScreenKeyDown, 0);
+        Volatile.Write(ref _printScreenPosted, 0);
+        var hook = Interlocked.Exchange(ref _printScreenHook, IntPtr.Zero);
+        if (hook != IntPtr.Zero)
+            User32.UnhookWindowsHookEx(hook);
+    }
+
     public void Unregister()
     {
         if (_captureRegistered) { User32.UnregisterHotKey(IntPtr.Zero, HOTKEY_CAPTURE); _captureRegistered = false; }
@@ -188,6 +321,7 @@ public sealed class HotkeyService : IDisposable
         if (_scrollCaptureRegistered) { User32.UnregisterHotKey(IntPtr.Zero, HOTKEY_SCROLL_CAPTURE); _scrollCaptureRegistered = false; }
         if (_aiRedirectRegistered) { User32.UnregisterHotKey(IntPtr.Zero, HOTKEY_AI_REDIRECT); _aiRedirectRegistered = false; }
         if (_centerRegistered) { User32.UnregisterHotKey(IntPtr.Zero, HOTKEY_CENTER); _centerRegistered = false; }
+        RemovePrintScreenHook();
         if (_registered)
         {
             ComponentDispatcher.ThreadPreprocessMessage -= OnMsg;

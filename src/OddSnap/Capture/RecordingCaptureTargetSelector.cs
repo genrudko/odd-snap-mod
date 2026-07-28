@@ -27,7 +27,7 @@ public static class RecordingCaptureTargetSelector
     /// contains <paramref name="screenPoint"/>. Moving the pointer changes the target;
     /// a left click confirms it and only then does the recording workflow continue.
     /// </summary>
-    public static RecordingCaptureTarget GetMonitorTargetAt(Point screenPoint)
+    public static RecordingCaptureTarget? SelectMonitorAt(Point screenPoint)
     {
         RecordingCaptureTarget? selectedTarget = null;
         Exception? pickerError = null;
@@ -66,6 +66,12 @@ public static class RecordingCaptureTargetSelector
         if (pickerError is not null)
             throw new InvalidOperationException("OddSnap could not open the monitor recording picker.", pickerError);
 
+        return selectedTarget;
+    }
+
+    public static RecordingCaptureTarget GetMonitorTargetAt(Point screenPoint)
+    {
+        var selectedTarget = SelectMonitorAt(screenPoint);
         if (selectedTarget is not null)
             return selectedTarget;
 

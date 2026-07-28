@@ -241,6 +241,8 @@ public sealed class AppSettings
     public bool RecordDesktopAudio { get; set; } = true;
     public string? MicrophoneDeviceId { get; set; }
     public string? DesktopAudioDeviceId { get; set; }
+    public bool FadeRecordingToolbarWhenIdle { get; set; } = true;
+    public int RecordingToolbarIdleOpacityPercent { get; set; } = 55;
 
     // Toolbar customization: which tools appear in the dock
     // null = all tools enabled (default). List of tool IDs from ToolDef.AllTools.

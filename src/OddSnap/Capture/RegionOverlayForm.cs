@@ -16,6 +16,7 @@ public sealed partial class RegionOverlayForm : Form
     private readonly Rectangle _virtualBounds;
     private readonly WindowDetectionMode _windowDetectionMode;
     private readonly CenterSelectionAspectRatio _centerSelectionAspectRatio;
+    private SnippingLauncherMode? _snippingLauncherMode;
 
     private CaptureMode _mode = CaptureMode.Rectangle;
     private bool _isSelecting;
@@ -32,8 +33,11 @@ public sealed partial class RegionOverlayForm : Form
     private ToolDef[] _flyoutTools = Array.Empty<ToolDef>();
     private List<string>? _toolbarToolOrderIds;
     private List<string>? _toolbarPinnedToolIds;
-    private int BtnCount => _mainBarTools.Length + (_flyoutTools.Length > 0 ? 1 : 0) + 2; // +more +color +close
-    private int ColorButtonIndex => BtnCount - 2;
+    private bool IsSnippingLauncher => _snippingLauncherMode.HasValue;
+    private int BtnCount => IsSnippingLauncher
+        ? _mainBarTools.Length + 1 // launcher buttons + close
+        : _mainBarTools.Length + (_flyoutTools.Length > 0 ? 1 : 0) + 2; // +more +color +close
+    private int ColorButtonIndex => IsSnippingLauncher ? -1 : BtnCount - 2;
     private int _moreButtonIndex = -1; // index of "..." button in _toolbarButtons
     private Rectangle[] _toolbarButtons = Array.Empty<Rectangle>();
     private string[] _toolbarIcons = Array.Empty<string>();
@@ -369,6 +373,7 @@ public sealed partial class RegionOverlayForm : Form
 
     // Events
     public event Action<Rectangle>? RegionSelected;
+    public event Action<Rectangle>? RecordingRegionSelected;
     public event Action<Rectangle>? OcrRegionSelected;
     public event Action<Bitmap>? FreeformSelected;
     public event Action<string>? ColorPicked;
@@ -381,16 +386,20 @@ public sealed partial class RegionOverlayForm : Form
     public RegionOverlayForm(Bitmap screenshot, Rectangle virtualBounds,
         CaptureMode initialMode = CaptureMode.Rectangle,
         WindowDetectionMode windowDetectionMode = WindowDetectionMode.WindowOnly,
-        CenterSelectionAspectRatio centerSelectionAspectRatio = CenterSelectionAspectRatio.Free)
+        CenterSelectionAspectRatio centerSelectionAspectRatio = CenterSelectionAspectRatio.Free,
+        SnippingLauncherMode? snippingLauncherMode = null)
     {
         _screenshot = screenshot;
         _virtualBounds = virtualBounds;
         _windowDetectionMode = windowDetectionMode;
         _centerSelectionAspectRatio = centerSelectionAspectRatio;
+        _snippingLauncherMode = snippingLauncherMode;
         _bmpW = _screenshot.Width;
         _bmpH = _screenshot.Height;
-        _mode = initialMode;
-        _activeToolId = ToolDef.AllTools.FirstOrDefault(t => t.Mode == _mode)?.Id;
+        _mode = snippingLauncherMode.HasValue ? CaptureMode.Rectangle : initialMode;
+        _activeToolId = snippingLauncherMode == SnippingLauncherMode.Recording
+            ? "_snipArea"
+            : ToolDef.AllTools.FirstOrDefault(t => t.Mode == _mode)?.Id;
         _showTime = DateTime.UtcNow;
 
         // Magnifier bitmap for color picker
@@ -490,6 +499,12 @@ public sealed partial class RegionOverlayForm : Form
     private void CalcToolbar()
     {
         int pad = UiChrome.ScaledToolbarInnerPadding;
+        if (IsSnippingLauncher)
+        {
+            CalcSnippingLauncherToolbar(pad);
+            return;
+        }
+
         int buttonSize = UiChrome.ScaledToolbarButtonSize;
         int buttonSpacing = UiChrome.ScaledToolbarButtonSpacing;
         int toolbarHeight = UiChrome.ScaledToolbarHeight;
@@ -591,6 +606,100 @@ public sealed partial class RegionOverlayForm : Form
         }
     }
 
+    private void CalcSnippingLauncherToolbar(int pad)
+    {
+        int buttonSize = UiChrome.ScaledToolbarButtonSize;
+        int buttonSpacing = UiChrome.ScaledToolbarButtonSpacing;
+        int toolbarHeight = UiChrome.ScaledToolbarHeight;
+
+        var screenshotToggle = new ToolDef("_snipScreenshot", "Screenshot", '\0', null, -1);
+        var recordingToggle = new ToolDef("_snipRecording", "Screen recording", '\0', null, -1);
+        var rectangle = ToolDef.AllTools.First(t => t.Id == "rect");
+        var recordArea = new ToolDef("_snipArea", "Record area", '\0', CaptureMode.Rectangle, -1);
+        var recordWindow = ToolDef.ToolbarActions.First(t => t.Id == "_recordWindow");
+        var recordMonitor = ToolDef.ToolbarActions.First(t => t.Id == "_recordMonitor");
+
+        var recordingTools = new List<ToolDef>
+        {
+            screenshotToggle,
+            recordingToggle,
+            recordArea,
+            recordWindow,
+            recordMonitor
+        };
+        if (_hasSelection && _selectionRect.Width > 2 && _selectionRect.Height > 2)
+            recordingTools.Add(new ToolDef("_snipStart", "Start recording", '\0', null, -1));
+
+        _mainBarTools = _snippingLauncherMode == SnippingLauncherMode.Recording
+            ? recordingTools.ToArray()
+            : new[]
+            {
+                screenshotToggle,
+                recordingToggle,
+                rectangle,
+                ToolDef.AllTools.First(t => t.Id == "free"),
+                ToolDef.ToolbarActions.First(t => t.Id == "_activeWindow"),
+                ToolDef.ToolbarActions.First(t => t.Id == "_fullscreen")
+            };
+        _flyoutTools = Array.Empty<ToolDef>();
+        _moreButtonIndex = -1;
+        _sepAfter = new[] { 1 };
+
+        int primarySpan = GetToolbarPrimarySpan(BtnCount, _sepAfter.Length, buttonSize, buttonSpacing, pad);
+        _toolbarButtons = new Rectangle[BtnCount];
+        _toolbarIcons = new string[BtnCount];
+        _toolbarLabels = new string[BtnCount];
+        _toolbarToolIds = new string[BtnCount];
+        _toolbarModes = new CaptureMode?[BtnCount];
+
+        for (int i = 0; i < _mainBarTools.Length; i++)
+        {
+            _toolbarIcons[i] = GetToolbarIconId(_mainBarTools[i].Id);
+            _toolbarLabels[i] = LocalizationService.Translate(_mainBarTools[i].Label);
+            _toolbarToolIds[i] = _mainBarTools[i].Id;
+            _toolbarModes[i] = _mainBarTools[i].Mode;
+        }
+
+        int closeIndex = BtnCount - 1;
+        _toolbarIcons[closeIndex] = "close";
+        _toolbarLabels[closeIndex] = LocalizationService.Translate("Close (Esc)");
+        _toolbarToolIds[closeIndex] = "close";
+        _toolbarModes[closeIndex] = null;
+
+        Point? cursorScreenPoint = null;
+        try
+        {
+            var cursorPos = System.Windows.Forms.Cursor.Position;
+            if (_virtualBounds.Contains(cursorPos))
+                cursorScreenPoint = cursorPos;
+        }
+        catch { }
+
+        _toolbarAnchorArea = ToolbarLayout.ResolveToolbarAnchorArea(
+            _virtualBounds,
+            cursorScreenPoint,
+            _toolbarAnchorArea,
+            GetScreenWorkingAreas());
+        Rectangle screenBounds = _toolbarAnchorArea.IsEmpty ? _virtualBounds : _toolbarAnchorArea;
+        _toolbarRect = ToolbarLayout.GetToolbarRect(
+            _virtualBounds,
+            screenBounds,
+            primarySpan,
+            toolbarHeight,
+            CaptureDockSide.Top,
+            UiChrome.ScaledToolbarTopMargin);
+
+        int x = _toolbarRect.X + pad;
+        int y = _toolbarRect.Y + (toolbarHeight - buttonSize) / 2;
+        for (int i = 0; i < BtnCount; i++)
+        {
+            _toolbarButtons[i] = new Rectangle(x, y, buttonSize, buttonSize);
+            x += buttonSize + buttonSpacing;
+            if (Array.IndexOf(_sepAfter, i) >= 0)
+                x += GroupGap;
+        }
+    }
+
     private void BuildToolbarToolSplit(Rectangle screenBounds, int buttonSize, int buttonSpacing, int pad)
     {
         var availableTools = GetOrderedAvailableToolbarItems();
@@ -656,6 +765,10 @@ public sealed partial class RegionOverlayForm : Form
 
     private static string GetToolbarIconId(string toolId) => toolId switch
     {
+        "_snipScreenshot" => "camera",
+        "_snipRecording" => "record",
+        "_snipArea" => "_record",
+        "_snipStart" => "_recordResume",
         "_fullscreen" => "fullscreen",
         "_activeWindow" => "activeWindow",
         "_scrollCapture" => "scrollCapture",

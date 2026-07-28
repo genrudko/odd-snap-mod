@@ -58,7 +58,7 @@ public sealed class VideoRecorder : IDisposable
     private Thread? _delayedAudioStartThread;
 
     // Audio capture
-    private WaveInEvent? _micCapture;
+    private WasapiCapture? _micCapture;
     private WasapiLoopbackCapture? _desktopCapture;
     private WaveFileWriter? _micWriter;
     private WaveFileWriter? _desktopWriter;
@@ -365,19 +365,14 @@ public sealed class VideoRecorder : IDisposable
     private void StartMicrophoneAudioCapture(string dir, string outputPath)
     {
         string wavPath = Path.Combine(dir, Path.GetFileNameWithoutExtension(outputPath) + "_mic.wav");
-        WaveInEvent? capture = null;
+        WasapiCapture? capture = null;
         WaveFileWriter? writer = null;
         EventHandler<WaveInEventArgs>? dataAvailableHandler = null;
         bool started = false;
 
         try
         {
-            int micDevice = ResolveMicDeviceNumber(_micDeviceId);
-            capture = new WaveInEvent
-            {
-                DeviceNumber = micDevice,
-                WaveFormat = new WaveFormat(44100, 16, 1)
-            };
+            capture = CreateMicrophoneCapture(_micDeviceId);
             writer = new WaveFileWriter(wavPath, capture.WaveFormat);
             dataAvailableHandler = (_, e) =>
             {
@@ -396,6 +391,10 @@ public sealed class VideoRecorder : IDisposable
             _micWriter = writer;
             _micDataAvailableHandler = dataAvailableHandler;
             started = true;
+
+            AppDiagnostics.LogInfo(
+                "recording.audio-start",
+                $"Microphone capture started through WASAPI: {capture.WaveFormat}.");
         }
         catch (Exception ex)
         {
@@ -420,16 +419,38 @@ public sealed class VideoRecorder : IDisposable
         }
     }
 
-    private static int ResolveMicDeviceNumber(string? deviceId)
+    private static WasapiCapture CreateMicrophoneCapture(string? deviceId)
     {
-        if (string.IsNullOrEmpty(deviceId)) return 0;
-        for (int i = 0; i < WaveInEvent.DeviceCount; i++)
+        if (string.IsNullOrWhiteSpace(deviceId))
+            return new WasapiCapture();
+
+        using var enumerator = new MMDeviceEnumerator();
+        try
         {
-            var caps = WaveInEvent.GetCapabilities(i);
-            if (caps.ProductName.Contains(deviceId, StringComparison.OrdinalIgnoreCase))
-                return i;
+            return new WasapiCapture(enumerator.GetDevice(deviceId));
         }
-        return 0;
+        catch (Exception exactMatchError)
+        {
+            var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active);
+            foreach (var device in devices)
+            {
+                if (string.Equals(device.ID, deviceId, StringComparison.OrdinalIgnoreCase) ||
+                    device.FriendlyName.Contains(deviceId, StringComparison.OrdinalIgnoreCase) ||
+                    deviceId.Contains(device.FriendlyName, StringComparison.OrdinalIgnoreCase))
+                {
+                    AppDiagnostics.LogWarning(
+                        "recording.audio-device",
+                        $"Microphone endpoint was resolved by friendly name after exact ID lookup failed: {device.FriendlyName}. " +
+                        exactMatchError.Message);
+                    return new WasapiCapture(device);
+                }
+            }
+
+            AppDiagnostics.LogWarning(
+                "recording.audio-device",
+                $"Configured microphone endpoint was not found; using the default capture endpoint. {exactMatchError.Message}");
+            return new WasapiCapture();
+        }
     }
 
     public void Pause() => _pauseClock.Pause();
@@ -649,21 +670,39 @@ public sealed class VideoRecorder : IDisposable
             string args = BuildMuxArguments(videoPath, audioFiles, tempOut, audioCodec, targetDurationSeconds);
             var result = RunProcessWithLimitedOutput(ffmpegPath, args, timeoutMs: 30_000);
 
-            if (!result.TimedOut && result.ExitCode == 0 && HasNonEmptyFile(tempOut))
-            {
-                File.Delete(videoPath);
-                File.Move(tempOut, videoPath);
+            if (TryPromoteMuxedOutput(videoPath, tempOut, result))
                 return true;
-            }
-            else
+
+            AppDiagnostics.LogWarning(
+                "recording.mux-audio",
+                result.TimedOut
+                    ? $"Audio mux timed out for {Path.GetFileName(videoPath)}."
+                    : $"Audio mux failed for {Path.GetFileName(videoPath)}. FFmpeg exit={result.ExitCode}. {result.StdErr}");
+            TryDeleteRecordingTempFile(tempOut, "failed mux output");
+
+            // A failed two-source mix must never silently remove every audio track.
+            // Retry each captured source independently and keep the first valid result.
+            if (audioFiles.Count > 1)
             {
-                // Mux failed — keep the original video without audio
-                AppDiagnostics.LogWarning(
-                    "recording.mux-audio",
-                    result.TimedOut
-                        ? $"Audio mux timed out for {Path.GetFileName(videoPath)}."
-                        : $"Audio mux failed for {Path.GetFileName(videoPath)}. FFmpeg exit={result.ExitCode}. {result.StdErr}");
-                TryDeleteRecordingTempFile(tempOut, "failed mux output");
+                foreach (var fallbackAudio in audioFiles)
+                {
+                    string fallbackArgs = BuildMuxArguments(
+                        videoPath,
+                        new[] { fallbackAudio },
+                        tempOut,
+                        audioCodec,
+                        targetDurationSeconds);
+                    var fallbackResult = RunProcessWithLimitedOutput(ffmpegPath, fallbackArgs, timeoutMs: 30_000);
+                    if (TryPromoteMuxedOutput(videoPath, tempOut, fallbackResult))
+                    {
+                        AppDiagnostics.LogWarning(
+                            "recording.mux-audio-fallback",
+                            $"Mixed audio failed; preserved {Path.GetFileName(fallbackAudio)} as the recording audio track.");
+                        return true;
+                    }
+
+                    TryDeleteRecordingTempFile(tempOut, "failed fallback mux output");
+                }
             }
         }
         catch
@@ -679,6 +718,19 @@ public sealed class VideoRecorder : IDisposable
         }
 
         return false;
+    }
+
+    private static bool TryPromoteMuxedOutput(
+        string videoPath,
+        string tempOut,
+        ProcessCaptureResult result)
+    {
+        if (result.TimedOut || result.ExitCode != 0 || !HasNonEmptyFile(tempOut))
+            return false;
+
+        File.Delete(videoPath);
+        File.Move(tempOut, videoPath);
+        return true;
     }
 
     private static void StopCaptureAndWait(IWaveIn? capture, int timeoutMs = 5_000)
@@ -731,8 +783,12 @@ public sealed class VideoRecorder : IDisposable
                    $"-c:v copy -c:a {audioCodec} -map 0:v -map \"[a]\"{muxerArgs} \"{tempOut}\"";
         }
 
+        const string normalizeAudio = "aresample=48000:async=1:first_pts=0,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo";
         return $"-y -i \"{videoPath}\" -i \"{audioFiles[0]}\" -i \"{audioFiles[1]}\" " +
-               $"-filter_complex \"[1:a][2:a]amix=inputs=2:duration=longest:dropout_transition=0,apad,atrim=0:{duration}[a]\" " +
+               $"-filter_complex \"[1:a]{normalizeAudio},volume=0.75[desktop];" +
+               $"[2:a]{normalizeAudio},volume=0.75[mic];" +
+               $"[desktop][mic]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0," +
+               $"alimiter=limit=0.95,apad,atrim=0:{duration}[a]\" " +
                $"-c:v copy -c:a {audioCodec} -map 0:v -map \"[a]\"{muxerArgs} \"{tempOut}\"";
     }
 
@@ -837,10 +893,35 @@ public sealed class VideoRecorder : IDisposable
         try { thread.Join(timeoutMs); } catch { }
     }
 
-    private static bool HasMeaningfulAudio(string path)
+    internal static bool HasMeaningfulAudio(string path)
     {
-        try { return File.Exists(path) && new FileInfo(path).Length > 44; }
-        catch { return false; }
+        try
+        {
+            if (!File.Exists(path) || new FileInfo(path).Length <= 44)
+                return false;
+
+            using var reader = new AudioFileReader(path);
+            var samples = new float[8192];
+            int read;
+            while ((read = reader.Read(samples, 0, samples.Length)) > 0)
+            {
+                for (int i = 0; i < read; i++)
+                {
+                    if (Math.Abs(samples[i]) >= 0.00001f)
+                        return true;
+                }
+            }
+
+            return false;
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.LogWarning(
+                "recording.audio-signal-check",
+                $"Could not inspect captured audio {Path.GetFileName(path)}: {ex.Message}",
+                ex);
+            return false;
+        }
     }
 
     private static bool HasNonEmptyFile(string path)

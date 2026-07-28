@@ -53,6 +53,8 @@ public sealed partial class RecordingForm : Form
     private readonly bool _recordDesktop;
     private readonly string? _desktopDeviceId;
     private readonly bool _showMagnifier;
+    private readonly bool _fadeRecordingToolbarWhenIdle;
+    private readonly int _recordingToolbarIdleOpacityPercent;
     private readonly CaptureMagnifierHelper? _magHelper;
     private LiveSelectionAdornerForm? _selectionAdorner;
     private CaptureEscapeKeyHook? _escapeHook;
@@ -87,7 +89,9 @@ public sealed partial class RecordingForm : Form
                          bool showCursor = false,
                          bool recordMic = false, string? micDeviceId = null,
                          bool recordDesktop = false, string? desktopDeviceId = null,
-                         bool showMagnifier = false)
+                         bool showMagnifier = false,
+                          bool fadeRecordingToolbarWhenIdle = true,
+                          int recordingToolbarIdleOpacityPercent = 55)
     {
         OddSnap.UI.Theme.Refresh();
         _screenshot = screenshot;
@@ -103,6 +107,8 @@ public sealed partial class RecordingForm : Form
         _recordDesktop = recordDesktop;
         _desktopDeviceId = desktopDeviceId;
         _showMagnifier = showMagnifier;
+        _fadeRecordingToolbarWhenIdle = fadeRecordingToolbarWhenIdle;
+        _recordingToolbarIdleOpacityPercent = Math.Clamp(recordingToolbarIdleOpacityPercent, 20, 100);
         if (_showMagnifier && screenshot is not null)
         {
             _magHelper = new CaptureMagnifierHelper();
@@ -126,6 +132,10 @@ public sealed partial class RecordingForm : Form
                  ControlStyles.OptimizedDoubleBuffer | ControlStyles.Opaque, true);
     }
 
+    internal bool FadeRecordingToolbarWhenIdle => _fadeRecordingToolbarWhenIdle;
+
+    internal int RecordingToolbarIdleOpacityPercent => _recordingToolbarIdleOpacityPercent;
+
     protected override CreateParams CreateParams
     {
         get
@@ -148,6 +158,12 @@ public sealed partial class RecordingForm : Form
         Focus();
         _escapeHook = CaptureEscapeKeyHook.Install(this, CancelFromEscape);
         _selectionAdorner?.Show(this);
+
+        // Preselected monitor/window/region workflows must enter recording from this
+        // deterministic lifecycle point. Relying on an externally attached Shown
+        // handler allowed the form to remain indefinitely in its selection phase.
+        if (_preselectedTargetStartQueued)
+            StartPreselectedTargetNow();
     }
 
     // ─── Selection phase ──────────────────────────────────────────────
@@ -179,7 +195,7 @@ public sealed partial class RecordingForm : Form
     {
         if (_state == State.Recording)
         {
-            DiscardRecording();
+            StopRecording();
             return;
         }
 
@@ -334,7 +350,7 @@ public sealed partial class RecordingForm : Form
         }
     }
 
-    internal void PaintRecordingToolbarTo(Graphics g, Rectangle bounds, int hoveredButton)
+    internal void PaintRecordingToolbarTo(Graphics g, Rectangle bounds, int hoveredButton, bool discardArmed)
     {
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.CompositingMode = CompositingMode.SourceOver;
@@ -355,20 +371,23 @@ public sealed partial class RecordingForm : Form
             g.FillEllipse(_dotBrush, dotX, dotY, 10, 10);
         g.DrawEllipse(_ringPen, dotX, dotY, 10, 10);
 
-        string time = $"{(int)elapsed.TotalMinutes:D2}:{elapsed.Seconds:D2}";
+        string time = discardArmed
+            ? "Click × again to discard"
+            : $"{(int)elapsed.TotalMinutes:D2}:{elapsed.Seconds:D2}";
         var pauseButton = GetRecordingToolbarPauseButton(bounds);
         var stopButton = GetRecordingToolbarStopButton(bounds);
         var discardButton = GetRecordingToolbarDiscardButton(bounds);
         var timeRect = new RectangleF(dotX + 18, bounds.Y, pauseButton.X - (dotX + 24), bounds.Height);
         using (var timeFormat = new StringFormat { LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap })
-            g.DrawString(time, _timeFont, _timeBrush, timeRect, timeFormat);
+            g.DrawString(time, discardArmed ? _hintFont : _timeFont, _timeBrush, timeRect, timeFormat);
 
         DrawIconBtn(g, pauseButton, paused ? "_recordResume" : "_recordPause", hoveredButton == 0,
             UiChrome.SurfaceTextPrimary, active: paused);
         DrawIconBtn(g, stopButton, "stopSquare", hoveredButton == 1,
             UiChrome.SurfaceTextPrimary, active: false);
         DrawIconBtn(g, discardButton, "close", hoveredButton == 2,
-            UiChrome.SurfaceTextPrimary, active: false);
+            discardArmed ? Color.FromArgb(255, 239, 68, 68) : UiChrome.SurfaceTextPrimary,
+            active: discardArmed);
     }
 
     internal static Rectangle GetRecordingToolbarDiscardButton(Rectangle toolbarBounds)

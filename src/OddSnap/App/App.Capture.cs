@@ -45,7 +45,7 @@ public partial class App
         public Services.HistoryEntry? HistoryEntry { get; init; }
     }
 
-    private void LaunchGifRecording(RecordingCaptureTarget? preselectedTarget = null)
+    private void LaunchGifRecording(RecordingCaptureTarget? preselectedTarget = null, bool openResultWindow = false)
     {
         var thread = new Thread(() =>
         {
@@ -57,9 +57,20 @@ public partial class App
                 var settings = _settingsService!.Settings;
                 Helpers.UiChrome.SetUiScale(settings.UiScale);
                 bool showCursor = settings.ShowCursor;
-                var capture = ScreenCapture.CaptureAllScreens(showCursor);
-                selectionScreenshot = capture.Bitmap;
-                var bounds = capture.Bounds;
+                Rectangle bounds;
+                if (preselectedTarget is null)
+                {
+                    var capture = ScreenCapture.CaptureAllScreens(showCursor);
+                    selectionScreenshot = capture.Bitmap;
+                    bounds = capture.Bounds;
+                }
+                else
+                {
+                    // A Snipping Launcher selection already supplied the final physical
+                    // desktop bounds. Do not show a second frozen screenshot-selection
+                    // surface before recording starts.
+                    bounds = ScreenCapture.GetVirtualScreenBounds();
+                }
                 var s = settings;
                 var fmt = s.RecordingFormat;
 
@@ -79,7 +90,9 @@ public partial class App
                 bool recDesktop = fmt != RecordingFormat.GIF && s.RecordDesktopAudio;
                 form = new RecordingForm(selectionScreenshot, bounds, fps, savePath, fmt, maxH,
                     showCursor, recMic, s.MicrophoneDeviceId, recDesktop, s.DesktopAudioDeviceId,
-                    _settingsService!.Settings.ShowCaptureMagnifier);
+                    s.ShowCaptureMagnifier,
+                    s.FadeRecordingToolbarWhenIdle,
+                    s.RecordingToolbarIdleOpacityPercent);
                 if (preselectedTarget is not null)
                     form.UsePreselectedTarget(preselectedTarget);
                 selectionScreenshot = null;
@@ -117,7 +130,14 @@ public partial class App
                             ? settings.AutoUploadGifs && settings.ImageUploadDestination != UploadDestination.None
                             : settings.AutoUploadVideos && settings.ImageUploadDestination != UploadDestination.None;
 
-                        if (willUpload)
+                        if (openResultWindow)
+                        {
+                            ShowSnippingMediaResult(path, firstFrame);
+                            firstFrame = null;
+                            if (willUpload)
+                                _ = UploadFileAsync(path, isGif ? "GIF" : "Video", historyEntry);
+                        }
+                        else if (willUpload)
                         {
                             firstFrame?.Dispose();
                             _ = UploadFileAsync(path, isGif ? "GIF" : "Video", historyEntry);
@@ -302,13 +322,15 @@ public partial class App
         thread.Start();
     }
 
-    private void CaptureFullscreenNow()
+    private void CaptureFullscreenNow() => CaptureFullscreenNow(openResultWindow: false);
+
+    private void CaptureFullscreenNow(bool openResultWindow)
     {
         Bitmap? bmp = null;
         try
         {
             (bmp, _) = ScreenCapture.CaptureAllScreens(_settingsService!.Settings.ShowCursor);
-            HandleCaptureResult(bmp);
+            HandleCaptureResult(bmp, openResultWindow: openResultWindow);
             bmp = null;
         }
         catch (Exception ex)
@@ -322,7 +344,9 @@ public partial class App
         }
     }
 
-    private void CaptureActiveWindowNow()
+    private void CaptureActiveWindowNow() => CaptureActiveWindowNow(openResultWindow: false);
+
+    private void CaptureActiveWindowNow(bool openResultWindow)
     {
         Bitmap? bmp = null;
         try
@@ -351,7 +375,7 @@ public partial class App
             }
 
             bmp = ScreenCapture.CaptureRegion(captureRegion, _settingsService!.Settings.ShowCursor);
-            HandleCaptureResult(bmp);
+            HandleCaptureResult(bmp, openResultWindow: openResultWindow);
             bmp = null;
         }
         catch (Exception ex)
@@ -365,20 +389,20 @@ public partial class App
         }
     }
 
-    private void LaunchOverlay(CaptureMode initialMode, bool useAiRedirect = false)
+    private void LaunchOverlay(CaptureMode initialMode, bool useAiRedirect = false, SnippingLauncherMode? snippingLauncherMode = null)
     {
         Interlocked.Exchange(ref _captureRequestedTimestamp, PerformanceTrace.Timestamp());
-        LaunchWithDelay(() => LaunchOverlayNow(initialMode, useAiRedirect));
+        LaunchWithDelay(() => LaunchOverlayNow(initialMode, useAiRedirect, snippingLauncherMode));
     }
 
-    private void LaunchOverlayNow(CaptureMode initialMode, bool useAiRedirect = false)
+    private void LaunchOverlayNow(CaptureMode initialMode, bool useAiRedirect = false, SnippingLauncherMode? snippingLauncherMode = null)
     {
         var requestedAt = Interlocked.Exchange(ref _captureRequestedTimestamp, 0);
         if (requestedAt == 0)
             requestedAt = PerformanceTrace.Timestamp();
         try
         {
-            CaptureOverlayThread.Post(() => RunOverlayCaptureSession(initialMode, useAiRedirect, requestedAt));
+            CaptureOverlayThread.Post(() => RunOverlayCaptureSession(initialMode, useAiRedirect, snippingLauncherMode, requestedAt));
         }
         catch (Exception ex)
         {
@@ -390,9 +414,13 @@ public partial class App
         }
     }
 
-    private void RunOverlayCaptureSession(CaptureMode initialMode, bool useAiRedirect, long requestedAt)
+    private void RunOverlayCaptureSession(CaptureMode initialMode, bool useAiRedirect, SnippingLauncherMode? snippingLauncherMode, long requestedAt)
     {
         Bitmap? screenshot = null;
+        bool captureFlowHandedOff = false;
+        RecordingCaptureTarget? pendingRecordingTarget = null;
+        string? pendingToolbarActionId = null;
+        bool pendingToolbarActionOpenResult = false;
         try
         {
             var screenshotStarted = PerformanceTrace.Timestamp();
@@ -411,8 +439,11 @@ public partial class App
                 screenshot,
                 bounds,
                 initialMode,
-                _settingsService!.Settings.WindowDetection,
-                _settingsService.Settings.CenterSelectionAspectRatio)
+                snippingLauncherMode == SnippingLauncherMode.Recording
+                    ? WindowDetectionMode.Off
+                    : _settingsService!.Settings.WindowDetection,
+                _settingsService.Settings.CenterSelectionAspectRatio,
+                snippingLauncherMode)
             {
                 ShowCrosshairGuides = _settingsService!.Settings.ShowCrosshairGuides,
                 DetectWindows = _settingsService.Settings.DetectWindows,
@@ -438,14 +469,25 @@ public partial class App
                 using var annotated = overlay.RenderAnnotatedBitmap();
                 var cropped = ScreenCapture.CropRegion(annotated, sel);
                 overlay.Close();
-                HandleCaptureResult(cropped, useAiRedirect);
+                HandleCaptureResult(cropped, useAiRedirect, openResultWindow: snippingLauncherMode.HasValue);
+            };
+
+            overlay.RecordingRegionSelected += sel =>
+            {
+                captureFlowHandedOff = true;
+                var screenRegion = new Rectangle(
+                    bounds.X + sel.X,
+                    bounds.Y + sel.Y,
+                    sel.Width,
+                    sel.Height);
+                pendingRecordingTarget = RecordingCaptureTarget.ForRegion(screenRegion);
             };
 
             overlay.FreeformSelected += fbmp =>
             {
                 overlay.Hide();
                 overlay.Close();
-                HandleCaptureResult(fbmp, useAiRedirect);
+                HandleCaptureResult(fbmp, useAiRedirect, openResultWindow: snippingLauncherMode.HasValue);
             };
 
             overlay.OcrRegionSelected += sel =>
@@ -636,21 +678,44 @@ public partial class App
 
             overlay.ToolbarActionRequested += actionId =>
             {
+                // Window and monitor pickers are also topmost surfaces. Defer opening
+                // them until this launcher and its layered toolbar have fully closed.
+                captureFlowHandedOff = true;
+                pendingToolbarActionId = actionId;
+                pendingToolbarActionOpenResult = snippingLauncherMode.HasValue;
                 overlay.Hide();
                 overlay.Close();
-                if (!TryPostToAppDispatcher(
-                        () => LaunchToolbarActionFromOverlay(actionId),
-                        DispatcherPriority.Background,
-                        "capture.toolbar-action-post"))
-                {
-                    ResetCapturingWithoutUiRestore();
-                }
             };
 
             overlay.FormClosed += (_, _) =>
             {
                 screenshot?.Dispose();
                 screenshot = null;
+
+                // The old launcher and its owned layered windows are now fully closed.
+                // Only at this point may the dedicated recording form be created.
+                if (pendingRecordingTarget is not null)
+                {
+                    LaunchGifRecording(pendingRecordingTarget, openResultWindow: true);
+                    return;
+                }
+
+                if (pendingToolbarActionId is not null)
+                {
+                    string actionId = pendingToolbarActionId;
+                    bool openResultWindow = pendingToolbarActionOpenResult;
+                    if (!TryPostToAppDispatcher(
+                            () => LaunchToolbarActionFromOverlay(actionId, openResultWindow),
+                            DispatcherPriority.Background,
+                            "capture.toolbar-action-after-close-post"))
+                    {
+                        ResetCapturingWithoutUiRestore();
+                    }
+                    return;
+                }
+
+                if (captureFlowHandedOff)
+                    return;
 
                 var mode = overlay.CurrentMode;
                 if (mode is CaptureMode.Rectangle or CaptureMode.Center or CaptureMode.Freeform)
@@ -687,17 +752,17 @@ public partial class App
         }
     }
 
-    private void LaunchToolbarActionFromOverlay(string actionId)
+    private void LaunchToolbarActionFromOverlay(string actionId, bool openResultWindow = false)
     {
         Volatile.Write(ref _isCapturing, 1);
 
         switch (actionId)
         {
             case "_fullscreen":
-                LaunchWithDelay(CaptureFullscreenNow);
+                LaunchWithDelay(() => CaptureFullscreenNow(openResultWindow));
                 break;
             case "_activeWindow":
-                LaunchWithDelay(CaptureActiveWindowNow);
+                LaunchWithDelay(() => CaptureActiveWindowNow(openResultWindow));
                 break;
             case "_scrollCapture":
                 LaunchScrollingCapture();
@@ -714,13 +779,20 @@ public partial class App
                 }
                 break;
             case "_recordMonitor":
-                LaunchGifRecording(RecordingCaptureTargetSelector.GetMonitorTargetAt(System.Windows.Forms.Cursor.Position));
+            {
+                var monitorTarget = RecordingCaptureTargetSelector.SelectMonitorAt(
+                    System.Windows.Forms.Cursor.Position);
+                if (monitorTarget is not null)
+                    LaunchGifRecording(monitorTarget, openResultWindow);
+                else
+                    ResetCapturing();
                 break;
+            }
             case "_recordWindow":
             {
                 var windowTarget = RecordingWindowTargetSelector.SelectWindowAt(System.Windows.Forms.Cursor.Position);
                 if (windowTarget is not null)
-                    LaunchGifRecording(windowTarget);
+                    LaunchGifRecording(windowTarget, openResultWindow);
                 else
                     ResetCapturing();
                 break;

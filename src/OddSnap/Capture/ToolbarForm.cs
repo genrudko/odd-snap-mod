@@ -37,11 +37,12 @@ public sealed class ToolbarForm : Form
             var cp = base.CreateParams;
             cp.ExStyle |= 0x80;       // WS_EX_TOOLWINDOW
             cp.ExStyle |= 0x08000000; // WS_EX_NOACTIVATE
-            cp.ExStyle |= 0x00000020; // WS_EX_TRANSPARENT (click-through)
             cp.ExStyle |= 0x00080000; // WS_EX_LAYERED
             return cp;
         }
     }
+
+    protected override bool ShowWithoutActivation => true;
 
     protected override void OnHandleCreated(EventArgs e)
     {
@@ -74,22 +75,22 @@ public sealed class ToolbarForm : Form
 
         // _owner paints using overlay-client coordinates (e.g. _toolbarRect).
         // This form is positioned at screen coords; the overlay's screen origin
-        // is _owner.Left, _owner.Top.  So translate = overlayScreenOrigin - thisScreenOrigin.
+        // is _owner.Left, _owner.Top. So translate = overlayScreenOrigin - thisScreenOrigin.
         int dx = _owner.Left - Left;
         int dy = _owner.Top - Top;
 
         var g = _surfaceGraphics!;
         g.Clear(Color.Transparent);
         g.CompositingMode = CompositingMode.SourceOver;
-        g.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighQuality;
+        g.CompositingQuality = CompositingQuality.HighQuality;
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-        g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
         g.TranslateTransform(dx, dy);
         _owner.PaintToolbarTo(g);
         g.ResetTransform();
-        g.Flush(System.Drawing.Drawing2D.FlushIntention.Sync);
+        g.Flush(FlushIntention.Sync);
 
         var screenPt = new Native.User32.POINT { X = Left, Y = Top };
         var size = new Native.User32.SIZE { cx = sz.Width, cy = sz.Height };
@@ -99,7 +100,7 @@ public sealed class ToolbarForm : Form
             BlendOp = 0, // AC_SRC_OVER
             BlendFlags = 0,
             SourceConstantAlpha = 255,
-            AlphaFormat = 1  // AC_SRC_ALPHA
+            AlphaFormat = 1 // AC_SRC_ALPHA
         };
 
         IntPtr hdcScreen = Native.User32.GetDC(IntPtr.Zero);
@@ -128,6 +129,26 @@ public sealed class ToolbarForm : Form
                 Native.User32.DeleteDC(hdcMem);
             Native.User32.ReleaseDC(IntPtr.Zero, hdcScreen);
         }
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        int button = _owner.HandleToolbarSurfaceMouseMove(MousePosition);
+        Cursor = button >= 0 ? Cursors.Hand : Cursors.Default;
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        base.OnMouseLeave(e);
+        Cursor = Cursors.Default;
+        _owner.HandleToolbarSurfaceMouseLeave();
+    }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        base.OnMouseDown(e);
+        _owner.HandleToolbarSurfaceMouseDown(MousePosition, e.Button);
     }
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)

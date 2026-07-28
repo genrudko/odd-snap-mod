@@ -347,7 +347,7 @@ public sealed partial class RecordingForm
             return;
 
         _recordingToolbarForm ??= new RecordingToolbarForm(this);
-        _recordingToolbarForm.Bounds = bounds;
+        _recordingToolbarForm.ApplyAutomaticBounds(bounds);
         if (!_recordingToolbarForm.Visible)
             _recordingToolbarForm.Show(this);
         _recordingToolbarForm.UpdateSurface();

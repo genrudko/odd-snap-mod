@@ -1,4 +1,13 @@
-using System.Drawing.Drawing2D;
+from __future__ import annotations
+
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+TOOLBAR = ROOT / "src/OddSnap/Capture/RecordingToolbarForm.cs"
+RECORDING = ROOT / "src/OddSnap/Capture/RecordingForm.Recording.cs"
+TRACKING = ROOT / "src/OddSnap/Capture/RecordingForm.WindowTracking.cs"
+
+TOOLBAR_CONTENT = r'''using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Windows.Forms;
 using OddSnap.Native;
@@ -8,8 +17,8 @@ namespace OddSnap.Capture;
 internal sealed class RecordingToolbarForm : Form
 {
     private const byte ActiveAlpha = 255;
+    private const byte IdleAlpha = 140;
     private static readonly TimeSpan IdleDelay = TimeSpan.FromMilliseconds(850);
-    private static readonly TimeSpan DiscardConfirmationWindow = TimeSpan.FromSeconds(2.5);
 
     private readonly RecordingForm _owner;
     private readonly System.Windows.Forms.Timer _fadeTimer;
@@ -20,8 +29,6 @@ internal sealed class RecordingToolbarForm : Form
     private byte _surfaceAlpha = ActiveAlpha;
     private bool _pointerInside;
     private bool _dragging;
-    private int _pressedButton = -1;
-    private DateTime _discardArmedUntilUtc = DateTime.MinValue;
     private Point _dragOffset;
     private Point? _manualOffsetInMonitor;
 
@@ -112,7 +119,7 @@ internal sealed class RecordingToolbarForm : Form
         g.InterpolationMode = InterpolationMode.HighQualityBicubic;
         g.PixelOffsetMode = PixelOffsetMode.HighQuality;
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
-        _owner.PaintRecordingToolbarTo(g, new Rectangle(Point.Empty, sz), _hoveredButton, IsDiscardArmed);
+        _owner.PaintRecordingToolbarTo(g, new Rectangle(Point.Empty, sz), _hoveredButton);
         g.Flush(FlushIntention.Sync);
 
         var screenPt = new User32.POINT { X = Left, Y = Top };
@@ -200,19 +207,22 @@ internal sealed class RecordingToolbarForm : Form
 
         WakeSurface();
         int button = GetButtonAt(e.Location);
-        if (button >= 0)
+        if (button == 0)
         {
-            if (button != 2)
-                DisarmDiscardConfirmation();
-
-            _pressedButton = button;
-            _hoveredButton = button;
-            Capture = true;
-            UpdateSurface();
+            _owner.RequestToolbarTogglePause();
+            return;
+        }
+        if (button == 1)
+        {
+            _owner.RequestToolbarStop();
+            return;
+        }
+        if (button == 2)
+        {
+            _owner.RequestToolbarDiscard();
             return;
         }
 
-        DisarmDiscardConfirmation();
         _dragging = true;
         _dragOffset = e.Location;
         Capture = true;
@@ -222,24 +232,7 @@ internal sealed class RecordingToolbarForm : Form
     protected override void OnMouseUp(MouseEventArgs e)
     {
         base.OnMouseUp(e);
-        if (e.Button != MouseButtons.Left)
-            return;
-
-        if (_pressedButton >= 0)
-        {
-            int pressedButton = _pressedButton;
-            _pressedButton = -1;
-            Capture = false;
-
-            if (GetButtonAt(e.Location) == pressedButton)
-                ExecuteToolbarButton(pressedButton);
-            else
-                UpdateSurface();
-
-            return;
-        }
-
-        if (!_dragging)
+        if (e.Button != MouseButtons.Left || !_dragging)
             return;
 
         MoveByPointer();
@@ -250,74 +243,11 @@ internal sealed class RecordingToolbarForm : Form
         WakeSurface();
     }
 
-    protected override void OnMouseCaptureChanged(EventArgs e)
-    {
-        base.OnMouseCaptureChanged(e);
-        if (Capture || _pressedButton < 0)
-            return;
-
-        _pressedButton = -1;
-        UpdateSurface();
-    }
-
-    private void ExecuteToolbarButton(int button)
-    {
-        switch (button)
-        {
-            case 0:
-                DisarmDiscardConfirmation();
-                _owner.RequestToolbarTogglePause();
-                break;
-
-            case 1:
-                DisarmDiscardConfirmation();
-                _owner.RequestToolbarStop();
-                break;
-
-            case 2:
-            {
-                var nowUtc = DateTime.UtcNow;
-                if (ResolveDiscardClick(nowUtc, _discardArmedUntilUtc) == DiscardClickDecision.Discard)
-                {
-                    _discardArmedUntilUtc = DateTime.MinValue;
-                    _owner.RequestToolbarDiscard();
-                }
-                else
-                {
-                    _discardArmedUntilUtc = nowUtc + DiscardConfirmationWindow;
-                    _lastInteractionUtc = nowUtc;
-                    UpdateSurface();
-                }
-                break;
-            }
-        }
-    }
-
-    private void DisarmDiscardConfirmation()
-    {
-        if (_discardArmedUntilUtc == DateTime.MinValue)
-            return;
-
-        _discardArmedUntilUtc = DateTime.MinValue;
-        UpdateSurface();
-    }
-
-    internal enum DiscardClickDecision
-    {
-        Arm,
-        Discard
-    }
-
-    internal static DiscardClickDecision ResolveDiscardClick(DateTime nowUtc, DateTime armedUntilUtc)
-        => nowUtc <= armedUntilUtc ? DiscardClickDecision.Discard : DiscardClickDecision.Arm;
-
-    private bool IsDiscardArmed => DateTime.UtcNow <= _discardArmedUntilUtc;
-
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
         if ((keyData & Keys.KeyCode) == Keys.Escape)
         {
-            _owner.RequestToolbarStop();
+            _owner.RequestToolbarDiscard();
             return true;
         }
 
@@ -363,34 +293,14 @@ internal sealed class RecordingToolbarForm : Form
         UpdateSurface();
     }
 
-    internal static byte ResolveIdleAlpha(bool fadeWhenIdle, int opacityPercent)
-    {
-        if (!fadeWhenIdle)
-            return ActiveAlpha;
-
-        int clampedPercent = Math.Clamp(opacityPercent, 20, 100);
-        return (byte)Math.Round(
-            ActiveAlpha * (clampedPercent / 100d),
-            MidpointRounding.AwayFromZero);
-    }
-
     private void UpdateIdleOpacity()
     {
         if (IsDisposed || !IsHandleCreated || !Visible)
             return;
 
-        var nowUtc = DateTime.UtcNow;
-        if (_discardArmedUntilUtc != DateTime.MinValue && nowUtc > _discardArmedUntilUtc)
-        {
-            _discardArmedUntilUtc = DateTime.MinValue;
-            UpdateSurface();
-        }
-
-        byte target = _pointerInside || _dragging || nowUtc - _lastInteractionUtc < IdleDelay
+        byte target = _pointerInside || _dragging || DateTime.UtcNow - _lastInteractionUtc < IdleDelay
             ? ActiveAlpha
-            : ResolveIdleAlpha(
-                _owner.FadeRecordingToolbarWhenIdle,
-                _owner.RecordingToolbarIdleOpacityPercent);
+            : IdleAlpha;
         if (_surfaceAlpha == target)
             return;
 
@@ -440,3 +350,52 @@ internal sealed class RecordingToolbarForm : Form
         base.Dispose(disposing);
     }
 }
+'''
+
+
+def replace_once(path: Path, old: str, new: str) -> bool:
+    text = path.read_text(encoding="utf-8")
+    if new in text:
+        return False
+    if old not in text:
+        raise RuntimeError(f"Expected source block not found in {path}")
+    path.write_text(text.replace(old, new, 1), encoding="utf-8")
+    return True
+
+
+def main() -> None:
+    changed = False
+    normalized = TOOLBAR_CONTENT.replace("\r\n", "\n")
+    if not TOOLBAR.exists() or TOOLBAR.read_text(encoding="utf-8").replace("\r\n", "\n") != normalized:
+        TOOLBAR.write_text(normalized, encoding="utf-8")
+        changed = True
+
+    changed |= replace_once(
+        RECORDING,
+        """        _recordingToolbarForm ??= new RecordingToolbarForm(this);
+        _recordingToolbarForm.Bounds = bounds;
+        if (!_recordingToolbarForm.Visible)
+""",
+        """        _recordingToolbarForm ??= new RecordingToolbarForm(this);
+        _recordingToolbarForm.ApplyAutomaticBounds(bounds);
+        if (!_recordingToolbarForm.Visible)
+""",
+    )
+
+    changed |= replace_once(
+        TRACKING,
+        """            var toolbarBounds = GetRecordingToolbarScreenBounds();
+            if (_recordingToolbarForm is not null && !toolbarBounds.IsEmpty)
+                _recordingToolbarForm.Bounds = toolbarBounds;
+""",
+        """            var toolbarBounds = GetRecordingToolbarScreenBounds();
+            if (_recordingToolbarForm is not null && !toolbarBounds.IsEmpty)
+                _recordingToolbarForm.ApplyAutomaticBounds(toolbarBounds);
+""",
+    )
+
+    print("Floating recording toolbar repair applied." if changed else "Floating recording toolbar repair already applied.")
+
+
+if __name__ == "__main__":
+    main()

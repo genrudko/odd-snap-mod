@@ -107,6 +107,26 @@ public sealed partial class RegionOverlayForm
 
     private void ActivateToolbarItem(ToolDef tool)
     {
+        if (tool.Id == "_snipScreenshot")
+        {
+            SetSnippingLauncherMode(SnippingLauncherMode.Screenshot);
+            return;
+        }
+        if (tool.Id == "_snipRecording")
+        {
+            SetSnippingLauncherMode(SnippingLauncherMode.Recording);
+            return;
+        }
+        if (tool.Id == "_snipStart")
+        {
+            if (_snippingLauncherMode == SnippingLauncherMode.Recording &&
+                _selectionRect.Width > 2 && _selectionRect.Height > 2)
+            {
+                BeginSnippingRecordingHandoff(_selectionRect);
+            }
+            return;
+        }
+
         if (tool.Mode is { } mode)
         {
             SetMode(mode, tool.Id);
@@ -114,6 +134,28 @@ public sealed partial class RegionOverlayForm
         }
 
         ToolbarActionRequested?.Invoke(tool.Id);
+    }
+
+    private void SetSnippingLauncherMode(SnippingLauncherMode mode)
+    {
+        if (_snippingLauncherMode == mode)
+            return;
+
+        CancelActivePointerInteraction();
+        _snippingLauncherMode = mode;
+        _mode = CaptureMode.Rectangle;
+        _activeToolId = mode == SnippingLauncherMode.Recording ? "_snipArea" : "rect";
+        _hasSelection = false;
+        _hasDragged = false;
+        _selectionRect = Rectangle.Empty;
+        _freeformPoints.Clear();
+        _autoDetectRect = Rectangle.Empty;
+        _autoDetectActive = false;
+        CalcToolbar();
+        PositionToolbarForm();
+        RefreshToolbar();
+        Focus();
+        Invalidate();
     }
 
     private void SetToolColor(Color color)
@@ -395,7 +437,10 @@ public sealed partial class RegionOverlayForm
     {
         int pw = ColorPickerColumns * (ColorPickerSwatchSize + ColorPickerPadding) + ColorPickerPadding;
         int ph = ColorPickerRows * (ColorPickerSwatchSize + ColorPickerPadding) + ColorPickerPadding;
-        var colorBtn = _toolbarButtons.Length > ColorButtonIndex ? _toolbarButtons[ColorButtonIndex] : Rectangle.Empty;
+        int colorButtonIndex = ColorButtonIndex;
+        var colorBtn = colorButtonIndex >= 0 && colorButtonIndex < _toolbarButtons.Length
+            ? _toolbarButtons[colorButtonIndex]
+            : Rectangle.Empty;
         return PositionPopupFromAnchor(colorBtn, pw, ph);
     }
 
