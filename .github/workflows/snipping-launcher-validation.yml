@@ -22,27 +22,19 @@ jobs:
           ref: feature/snipping-launcher
           fetch-depth: 0
 
-      - name: Apply recording toolbar opacity settings
-        run: |
-          python tools/apply_recording_toolbar_opacity_constructor_prepatch.py
-          python tools/apply_recording_toolbar_opacity_method_prepatch.py
-          python tools/apply_recording_toolbar_opacity_properties_prepatch.py
-          python tools/apply_recording_toolbar_opacity_fields_prepatch.py
-          python tools/apply_recording_toolbar_opacity_settings_repair10.py
-          python tools/apply_recording_toolbar_opacity_code_postpatch.py
+      - name: Apply recording safety and dual-audio repair
+        run: python tools/apply_recording_safety_audio_repair11.py
 
       - name: Verify generated diff
         shell: bash
         run: |
           git diff --check
           git diff -- \
-            src/OddSnap/Models/AppSettings.cs \
-            src/OddSnap/App/App.Capture.cs \
             src/OddSnap/Capture/RecordingForm.cs \
+            src/OddSnap/Capture/RecordingForm.Recording.cs \
             src/OddSnap/Capture/RecordingToolbarForm.cs \
-            src/OddSnap/UI/SettingsWindow.xaml \
-            src/OddSnap/UI/SettingsWindow.RecordingToolbarOpacity.cs \
-            src/OddSnap.Tests/RecordingToolbarOpacityTests.cs
+            src/OddSnap/Capture/VideoRecorder.cs \
+            src/OddSnap.Tests/RecordingSafetyAndAudioMixTests.cs
 
       - name: Setup .NET 9
         uses: actions/setup-dotnet@v4
@@ -76,26 +68,22 @@ jobs:
         shell: bash
         run: |
           if git diff --quiet -- \
-            src/OddSnap/Models/AppSettings.cs \
-            src/OddSnap/App/App.Capture.cs \
             src/OddSnap/Capture/RecordingForm.cs \
+            src/OddSnap/Capture/RecordingForm.Recording.cs \
             src/OddSnap/Capture/RecordingToolbarForm.cs \
-            src/OddSnap/UI/SettingsWindow.xaml \
-            src/OddSnap/UI/SettingsWindow.RecordingToolbarOpacity.cs \
-            src/OddSnap.Tests/RecordingToolbarOpacityTests.cs; then
+            src/OddSnap/Capture/VideoRecorder.cs \
+            src/OddSnap.Tests/RecordingSafetyAndAudioMixTests.cs; then
             echo "No generated source changes to commit."
           else
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add \
-              src/OddSnap/Models/AppSettings.cs \
-              src/OddSnap/App/App.Capture.cs \
               src/OddSnap/Capture/RecordingForm.cs \
+              src/OddSnap/Capture/RecordingForm.Recording.cs \
               src/OddSnap/Capture/RecordingToolbarForm.cs \
-              src/OddSnap/UI/SettingsWindow.xaml \
-              src/OddSnap/UI/SettingsWindow.RecordingToolbarOpacity.cs \
-              src/OddSnap.Tests/RecordingToolbarOpacityTests.cs
-            git commit -m "feat: add recording toolbar opacity settings"
+              src/OddSnap/Capture/VideoRecorder.cs \
+              src/OddSnap.Tests/RecordingSafetyAndAudioMixTests.cs
+            git commit -m "fix: preserve recordings and mix microphone with desktop audio"
             git push origin HEAD:feature/snipping-launcher
           fi
 
