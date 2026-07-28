@@ -1,3 +1,4 @@
+using NAudio.Wave;
 using OddSnap.Capture;
 using Xunit;
 
@@ -53,5 +54,47 @@ public sealed class RecordingSafetyAndAudioMixTests
         Assert.DoesNotContain("amix=", args);
         Assert.Contains("[1:a]apad,atrim=0:8[a]", args);
         Assert.Contains("-map 0:v -map \"[a]\"", args);
+    }
+
+    [Fact]
+    public void SilentWaveIsNotAcceptedAsARecordingAudioSource()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"oddsnap-silent-{Guid.NewGuid():N}.wav");
+        try
+        {
+            using (var writer = new WaveFileWriter(path, new WaveFormat(48_000, 16, 1)))
+                writer.Write(new byte[48_000 * 2 / 10]);
+
+            Assert.False(VideoRecorder.HasMeaningfulAudio(path));
+        }
+        finally
+        {
+            try { File.Delete(path); } catch { }
+        }
+    }
+
+    [Fact]
+    public void WaveWithMicrophoneLikeSignalIsAcceptedAsARecordingAudioSource()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"oddsnap-signal-{Guid.NewGuid():N}.wav");
+        try
+        {
+            var data = new byte[48_000 * 2 / 10];
+            for (int i = 0; i + 1 < data.Length; i += 2)
+            {
+                short sample = (short)(Math.Sin(i / 16d) * 2_000);
+                data[i] = (byte)(sample & 0xff);
+                data[i + 1] = (byte)((sample >> 8) & 0xff);
+            }
+
+            using (var writer = new WaveFileWriter(path, new WaveFormat(48_000, 16, 1)))
+                writer.Write(data);
+
+            Assert.True(VideoRecorder.HasMeaningfulAudio(path));
+        }
+        finally
+        {
+            try { File.Delete(path); } catch { }
+        }
     }
 }
