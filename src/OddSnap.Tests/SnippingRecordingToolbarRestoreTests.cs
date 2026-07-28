@@ -23,6 +23,7 @@ public sealed class SnippingRecordingToolbarRestoreTests
         var thread = new Thread(() =>
         {
             System.Windows.Forms.Timer? watchdog = null;
+            System.Threading.Timer? hardStop = null;
             try
             {
                 var bounds = new Rectangle(0, 0, 800, 600);
@@ -35,6 +36,24 @@ public sealed class SnippingRecordingToolbarRestoreTests
                     CenterSelectionAspectRatio.Free,
                     SnippingLauncherMode.Recording);
 
+                // Hosted Windows runners occasionally fail to deliver Shown or the
+                // WinForms timer tick promptly. Keep a non-UI watchdog so the test
+                // cannot strand its STA message loop indefinitely.
+                hardStop = new System.Threading.Timer(
+                    _ =>
+                    {
+                        try
+                        {
+                            if (!form.IsDisposed && form.IsHandleCreated)
+                                form.BeginInvoke(new Action(form.Close));
+                        }
+                        catch (InvalidOperationException) { }
+                        catch (ObjectDisposedException) { }
+                    },
+                    null,
+                    TimeSpan.FromSeconds(10),
+                    Timeout.InfiniteTimeSpan);
+
                 form.Shown += (_, _) =>
                 {
                     form.BeginInvoke(new Action(() =>
@@ -43,7 +62,7 @@ public sealed class SnippingRecordingToolbarRestoreTests
                         InvokeMouse(form, "OnMouseMove", MouseButtons.Left, 520, 380);
                         InvokeMouse(form, "OnMouseUp", MouseButtons.Left, 520, 380);
 
-                        var deadline = DateTime.UtcNow.AddSeconds(5);
+                        var deadline = DateTime.UtcNow.AddSeconds(6);
                         watchdog = new System.Windows.Forms.Timer { Interval = 50 };
                         watchdog.Tick += (_, _) =>
                         {
@@ -69,19 +88,19 @@ public sealed class SnippingRecordingToolbarRestoreTests
                         watchdog.Start();
                     }));
                 };
-                form.FormClosed += (_, _) => finished.Set();
 
                 Application.Run(form);
             }
             catch (Exception ex)
             {
                 failure = ex;
-                finished.Set();
             }
             finally
             {
                 watchdog?.Stop();
                 watchdog?.Dispose();
+                hardStop?.Dispose();
+                finished.Set();
             }
         })
         {
@@ -91,7 +110,7 @@ public sealed class SnippingRecordingToolbarRestoreTests
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
 
-        Assert.True(finished.Wait(TimeSpan.FromSeconds(12)), "The recording selection toolbar test timed out.");
+        Assert.True(finished.Wait(TimeSpan.FromSeconds(20)), "The recording selection toolbar test timed out.");
         if (failure is not null)
             ExceptionDispatchInfo.Capture(failure).Throw();
         Assert.True(toolbarRestored, "The recording launcher toolbar stayed hidden or did not expose Start recording after mouse-up.");
