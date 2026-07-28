@@ -23,7 +23,9 @@ jobs:
           fetch-depth: 0
 
       - name: Apply recording safety and dual-audio repair
-        run: python tools/apply_recording_safety_audio_repair11.py
+        run: |
+          python tools/apply_recording_safety_audio_repair11_fixpath.py
+          python tools/apply_recording_safety_audio_repair11.py
 
       - name: Verify generated diff
         shell: bash
@@ -31,7 +33,6 @@ jobs:
           git diff --check
           git diff -- \
             src/OddSnap/Capture/RecordingForm.cs \
-            src/OddSnap/Capture/RecordingForm.Recording.cs \
             src/OddSnap/Capture/RecordingToolbarForm.cs \
             src/OddSnap/Capture/VideoRecorder.cs \
             src/OddSnap.Tests/RecordingSafetyAndAudioMixTests.cs
@@ -69,7 +70,6 @@ jobs:
         run: |
           if git diff --quiet -- \
             src/OddSnap/Capture/RecordingForm.cs \
-            src/OddSnap/Capture/RecordingForm.Recording.cs \
             src/OddSnap/Capture/RecordingToolbarForm.cs \
             src/OddSnap/Capture/VideoRecorder.cs \
             src/OddSnap.Tests/RecordingSafetyAndAudioMixTests.cs; then
@@ -79,7 +79,6 @@ jobs:
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add \
               src/OddSnap/Capture/RecordingForm.cs \
-              src/OddSnap/Capture/RecordingForm.Recording.cs \
               src/OddSnap/Capture/RecordingToolbarForm.cs \
               src/OddSnap/Capture/VideoRecorder.cs \
               src/OddSnap.Tests/RecordingSafetyAndAudioMixTests.cs
