@@ -100,7 +100,6 @@ jobs:
           if ($exitCode -ne 0) { exit $exitCode }
 
       - name: Commit generated source changes
-        if: github.event_name == 'push'
         shell: bash
         run: |
           if git diff --quiet -- \
